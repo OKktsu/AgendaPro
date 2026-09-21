@@ -21,7 +21,7 @@ enum UserRole {
 }
 
 model Organization {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @db.Uuid
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -29,12 +29,12 @@ model Organization {
 }
 
 model User {
-  id             String       @id @default(uuid())
+  id             String       @id @default(uuid()) @db.Uuid
   name           String
   email          String       @unique
   passwordHash   String
   role           UserRole     @default(STAFF)
-  organizationId String
+  organizationId String       @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
