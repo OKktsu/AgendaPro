@@ -1,0 +1,22 @@
+name: Alerta no Discord
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar alerta para o Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          payload=$(jq -n \
+            --arg content "AgendaPro: alteracao enviada para main. Commit: ${GITHUB_SHA}. Autor: ${GITHUB_ACTOR}." \
+            '{content: $content}')
+          curl --fail --show-error --silent \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "$DISCORD_WEBHOOK_URL"
