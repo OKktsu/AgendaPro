@@ -7,7 +7,11 @@ import {
   registerOrganizationOwner,
 } from './auth/register.js';
 import { InvalidCredentialsError, loginBodySchema, loginUser } from './auth/login.js';
-import { createAuthMiddleware } from './auth/middleware.js';
+import {
+  createAuthMiddleware,
+  createRequireOwnerMiddleware,
+  getTenantContext,
+} from './auth/middleware.js';
 
 type AppDependencies = {
   registerOrganizationOwner?: typeof registerOrganizationOwner;
@@ -22,6 +26,8 @@ export function buildApp(dependencies: AppDependencies = {}) {
   const jwtSecret =
     dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'agendapro-dev-secret-change-in-production';
   const authenticate = createAuthMiddleware(jwtSecret);
+  const requireAuth = authenticate;
+  const requireOwner = createRequireOwnerMiddleware(jwtSecret);
 
   app.register(cors, { origin: true });
 
@@ -55,6 +61,31 @@ export function buildApp(dependencies: AppDependencies = {}) {
 
   app.get('/auth/me', { preHandler: authenticate }, async (request, reply) => {
     return reply.code(200).send({ user: request.user });
+  });
+
+  app.get('/me', { preHandler: requireAuth }, async (request, reply) => {
+    const tenantContext = getTenantContext(request);
+
+    return reply.code(200).send({
+      userId: tenantContext.userId,
+      organizationId: tenantContext.organizationId,
+      role: tenantContext.role,
+      user: request.user,
+      organization: {
+        id: tenantContext.organizationId,
+      },
+    });
+  });
+
+  app.get('/owner-area', { preHandler: requireOwner }, async (request, reply) => {
+    const tenantContext = getTenantContext(request);
+
+    return reply.code(200).send({
+      message: 'Acesso permitido à área do proprietário.',
+      tenantContext,
+      role: tenantContext.role,
+      organizationId: tenantContext.organizationId,
+    });
   });
 
   app.post('/auth/register', async (request, reply) => {

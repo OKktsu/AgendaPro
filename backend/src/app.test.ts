@@ -266,3 +266,225 @@ describe('GET /auth/me', () => {
     expect(body.user).not.toHaveProperty('password');
   });
 });
+
+describe('GET /me', () => {
+  const apps = new Set<ReturnType<typeof buildApp>>();
+  const jwtSecret = 'segredo-de-teste-me';
+
+  afterEach(async () => {
+    await Promise.all([...apps].map((app) => app.close()));
+    apps.clear();
+  });
+
+  const staffUser = {
+    id: 'staff-user-id-123',
+    name: 'Atendente João',
+    email: 'joao@example.com',
+    role: 'STAFF' as const,
+    organizationId: 'org-456',
+  };
+
+  const ownerUser = {
+    id: 'owner-user-id-789',
+    name: 'Dono Carlos',
+    email: 'carlos@example.com',
+    role: 'OWNER' as const,
+    organizationId: 'org-456',
+  };
+
+  it('rejects request without token with 401', async () => {
+    const app = buildApp({ jwtSecret });
+    apps.add(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      message: 'Token de autenticação não fornecido ou inválido.',
+    });
+  });
+
+  it('allows STAFF user to access /me returning user and organization context', async () => {
+    const app = buildApp({ jwtSecret });
+    apps.add(app);
+
+    const token = signJwt(staffUser, jwtSecret);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me',
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toMatchObject({
+      userId: staffUser.id,
+      organizationId: staffUser.organizationId,
+      role: 'STAFF',
+      user: staffUser,
+      organization: { id: staffUser.organizationId },
+    });
+  });
+
+  it('allows OWNER user to access /me', async () => {
+    const app = buildApp({ jwtSecret });
+    apps.add(app);
+
+    const token = signJwt(ownerUser, jwtSecret);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me',
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toMatchObject({
+      userId: ownerUser.id,
+      organizationId: ownerUser.organizationId,
+      role: 'OWNER',
+    });
+  });
+
+  it('ignores any organizationId or role sent in body or query params to prevent tenant spoofing', async () => {
+    const app = buildApp({ jwtSecret });
+    apps.add(app);
+
+    const token = signJwt(staffUser, jwtSecret);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me?organizationId=malicious-org-id&role=OWNER',
+      payload: {
+        organizationId: 'another-org-id',
+        role: 'OWNER',
+        userId: 'fake-user-id',
+      },
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.userId).toBe(staffUser.id);
+    expect(body.organizationId).toBe(staffUser.organizationId);
+    expect(body.role).toBe('STAFF');
+    expect(body.userId).not.toBe('fake-user-id');
+    expect(body.organizationId).not.toBe('another-org-id');
+    expect(body.organizationId).not.toBe('malicious-org-id');
+    expect(body.role).not.toBe('OWNER');
+  });
+});
+
+describe('GET /owner-area', () => {
+  const apps = new Set<ReturnType<typeof buildApp>>();
+  const jwtSecret = 'segredo-de-teste-owner-area';
+
+  afterEach(async () => {
+    await Promise.all([...apps].map((app) => app.close()));
+    apps.clear();
+  });
+
+  const staffUser = {
+    id: 'staff-user-id-123',
+    name: 'Atendente João',
+    email: 'joao@example.com',
+    role: 'STAFF' as const,
+    organizationId: 'org-456',
+  };
+
+  const ownerUser = {
+    id: 'owner-user-id-789',
+    name: 'Dono Carlos',
+    email: 'carlos@example.com',
+    role: 'OWNER' as const,
+    organizationId: 'org-456',
+  };
+
+  it('rejects request without token with 401', async () => {
+    const app = buildApp({ jwtSecret });
+    apps.add(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/owner-area',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      message: 'Token de autenticação não fornecido ou inválido.',
+    });
+  });
+
+  it('rejects STAFF user with 403 Forbidden', async () => {
+    const app = buildApp({ jwtSecret });
+    apps.add(app);
+
+    const token = signJwt(staffUser, jwtSecret);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/owner-area',
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      message: expect.stringMatching(/negado|permissão/i),
+    });
+  });
+
+  it('rejects STAFF user even if client attempts to send role OWNER in body', async () => {
+    const app = buildApp({ jwtSecret });
+    apps.add(app);
+
+    const token = signJwt(staffUser, jwtSecret);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/owner-area',
+      payload: {
+        role: 'OWNER',
+      },
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('allows OWNER user to access /owner-area with 200', async () => {
+    const app = buildApp({ jwtSecret });
+    apps.add(app);
+
+    const token = signJwt(ownerUser, jwtSecret);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/owner-area',
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toMatchObject({
+      role: 'OWNER',
+      organizationId: ownerUser.organizationId,
+    });
+  });
+});
