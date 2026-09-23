@@ -20,6 +20,16 @@ enum UserRole {
   STAFF
 }
 
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
 model Organization {
   id            String         @id @default(uuid()) @db.Uuid
   name          String
@@ -64,6 +74,7 @@ model Professional {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   services       ProfessionalService[]
+  workSchedules  ProfessionalWorkSchedule[]
 }
 
 model ProfessionalService {
@@ -75,3 +86,17 @@ model ProfessionalService {
 
   @@id([professionalId, serviceId])
 }
+
+model ProfessionalWorkSchedule {
+  id             String       @id @default(uuid()) @db.Uuid
+  professionalId String       @db.Uuid
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  weekday        Weekday
+  startTime      String
+  endTime        String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([professionalId, weekday])
+}
+
