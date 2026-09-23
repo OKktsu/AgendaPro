@@ -1,5 +1,5 @@
 import cors from '@fastify/cors';
-import Fastify from 'fastify';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 
 import {
   EmailAlreadyRegisteredError,
@@ -42,6 +42,26 @@ import {
   ServiceNotProvidedByProfessionalError,
   type AvailabilityDatabase,
 } from './schedule/availability.js';
+import {
+  createCustomer,
+  createCustomerSchema,
+  listCustomers,
+  type CustomerDatabase,
+} from './appointment/customer.js';
+import {
+  appointmentParamsSchema,
+  cancelAppointment,
+  createAppointment,
+  createAppointmentSchema,
+  listAppointments,
+  AppointmentConflictError,
+  AppointmentNotFoundError,
+  AppointmentOutsideWorkScheduleError,
+  CustomerNotFoundError,
+  ProfessionalNotFoundError,
+  ServiceNotFoundError,
+  type AppointmentDatabase,
+} from './appointment/appointment.js';
 
 type AppDependencies = {
   registerOrganizationOwner?: typeof registerOrganizationOwner;
@@ -59,6 +79,13 @@ type AppDependencies = {
   deleteWorkSchedule?: typeof deleteWorkSchedule;
   availabilityDatabase?: AvailabilityDatabase;
   getAvailability?: typeof getAvailability;
+  customerDatabase?: CustomerDatabase;
+  createCustomer?: typeof createCustomer;
+  listCustomers?: typeof listCustomers;
+  appointmentDatabase?: AppointmentDatabase;
+  createAppointment?: typeof createAppointment;
+  cancelAppointment?: typeof cancelAppointment;
+  listAppointments?: typeof listAppointments;
 };
 
 export function buildApp(dependencies: AppDependencies = {}) {
@@ -86,6 +113,15 @@ export function buildApp(dependencies: AppDependencies = {}) {
 
   const availabilityDb = dependencies.availabilityDatabase;
   const svcGetAvailability = dependencies.getAvailability ?? getAvailability;
+
+  const customerDb = dependencies.customerDatabase;
+  const svcCreateCustomer = dependencies.createCustomer ?? createCustomer;
+  const svcListCustomers = dependencies.listCustomers ?? listCustomers;
+
+  const appointmentDb = dependencies.appointmentDatabase;
+  const svcCreateAppointment = dependencies.createAppointment ?? createAppointment;
+  const svcCancelAppointment = dependencies.cancelAppointment ?? cancelAppointment;
+  const svcListAppointments = dependencies.listAppointments ?? listAppointments;
 
   app.register(cors, { origin: true });
 
@@ -409,6 +445,126 @@ export function buildApp(dependencies: AppDependencies = {}) {
       throw error;
     }
   });
+
+  app.post('/customers', { preHandler: requireAuth }, async (request, reply) => {
+    const parsedBody = createCustomerSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({
+        message: 'Dados de cliente inválidos.',
+        issues: parsedBody.error.flatten().fieldErrors,
+      });
+    }
+
+    const tenantContext = getTenantContext(request);
+    const customer = await svcCreateCustomer(
+      parsedBody.data,
+      tenantContext.organizationId,
+      customerDb,
+    );
+
+    return reply.code(201).send({ customer, ...customer });
+  });
+
+  app.get('/customers', { preHandler: requireAuth }, async (request, reply) => {
+    const tenantContext = getTenantContext(request);
+    const customers = await svcListCustomers(tenantContext.organizationId, customerDb);
+
+    return reply.code(200).send({ customers });
+  });
+
+  app.post('/appointments', { preHandler: requireAuth }, async (request, reply) => {
+    const parsedBody = createAppointmentSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({
+        message: 'Dados de reserva inválidos.',
+        issues: parsedBody.error.flatten().fieldErrors,
+      });
+    }
+
+    const tenantContext = getTenantContext(request);
+
+    try {
+      const appointment = await svcCreateAppointment(
+        parsedBody.data,
+        tenantContext.organizationId,
+        appointmentDb,
+      );
+
+      return reply.code(201).send({ appointment, ...appointment });
+    } catch (error) {
+      if (
+        error instanceof CustomerNotFoundError ||
+        error instanceof ProfessionalNotFoundError ||
+        error instanceof ServiceNotFoundError
+      ) {
+        return reply.code(404).send({ message: error.message });
+      }
+
+      if (
+        error instanceof ServiceNotProvidedByProfessionalError ||
+        error instanceof AppointmentOutsideWorkScheduleError
+      ) {
+        return reply.code(400).send({ message: error.message });
+      }
+
+      if (error instanceof AppointmentConflictError) {
+        return reply.code(409).send({ message: error.message });
+      }
+
+      throw error;
+    }
+  });
+
+  app.get('/appointments', { preHandler: requireAuth }, async (request, reply) => {
+    const tenantContext = getTenantContext(request);
+    const query = request.query as { professionalId?: string; customerId?: string } | undefined;
+    const appointments = await svcListAppointments(
+      tenantContext.organizationId,
+      query,
+      appointmentDb,
+    );
+
+    return reply.code(200).send({ appointments });
+  });
+
+  const handleCancelAppointment = async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsedParams = appointmentParamsSchema.safeParse(request.params);
+
+    if (!parsedParams.success) {
+      return reply.code(400).send({
+        message: 'Parâmetros de rota inválidos.',
+        issues: parsedParams.error.flatten().fieldErrors,
+      });
+    }
+
+    const tenantContext = getTenantContext(request);
+
+    try {
+      const appointment = await svcCancelAppointment(
+        parsedParams.data.id,
+        tenantContext.organizationId,
+        appointmentDb,
+      );
+
+      return reply.code(200).send({
+        message: 'Reserva cancelada com sucesso.',
+        appointment,
+        ...appointment,
+      });
+    } catch (error) {
+      if (error instanceof AppointmentNotFoundError) {
+        return reply.code(404).send({ message: error.message });
+      }
+
+      throw error;
+    }
+  };
+
+  app.patch('/appointments/:id/cancel', { preHandler: requireAuth }, handleCancelAppointment);
+  app.post('/appointments/:id/cancel', { preHandler: requireAuth }, handleCancelAppointment);
+  app.delete('/appointments/:id', { preHandler: requireAuth }, handleCancelAppointment);
 
   return app;
 }

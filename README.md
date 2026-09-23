@@ -89,6 +89,73 @@ Authorization: Bearer <SEU_TOKEN_JWT>
 
 > **Segurança multitenant**: O contexto de organização e privilégios é derivado unicamente do token JWT. O backend rejeita tentativas de manipulação ou troca de empresa via `body`, `query` ou `params`.
 
+## Reservas sem Conflito de Horário e Garantia PostgreSQL
+
+A plataforma AgendaPro impede sobreposição de reservas tanto na camada de aplicação quanto de forma definitiva e atômica no motor relacional do PostgreSQL.
+
+### Como aplicar as migrations
+
+1. Suba o container do banco de dados (se estiver rodando localmente via Docker):
+
+   ```bash
+   docker compose up -d
+   ```
+
+2. Em ambiente de desenvolvimento, aplique as migrations pendentes:
+
+   ```bash
+   npm run db:migrate
+   ```
+
+3. Em ambiente de produção ou CI (sem prompt interativo):
+
+   ```bash
+   npm run db:deploy -w backend
+   ```
+
+### Garantia final no PostgreSQL: Exclusion Constraint (`EXCLUDE USING gist`)
+
+A consulta prévia de disponibilidade não é a única proteção. Mesmo que duas requisições HTTP paralelas cheguem no exato mesmo milissegundo, a integridade é assegurada pela constraint de exclusão declarada na migration `20260923030000_add_customers_and_appointments`:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+ALTER TABLE "Appointment"
+ADD CONSTRAINT "no_overlapping_scheduled_appointments"
+EXCLUDE USING gist (
+  "professionalId" WITH =,
+  tsrange("startsAt", "endsAt", '[)') WITH &&
+)
+WHERE ("status" = 'SCHEDULED');
+```
+
+- **Intervalos semiabertos `[)`**: o operador `tsrange("startsAt", "endsAt", '[)')` define que o término é exclusivo. Uma reserva de `10:00–10:45` impede uma nova reserva às `10:30`, mas permite perfeitamente uma reserva adjacente às `10:45` sem colisão.
+- **Isolamento por profissional**: o predicado `"professionalId" WITH =` (habilitado pela extensão `btree_gist`) permite que profissionais distintos atendam no mesmo horário simultaneamente.
+- **Predicado de status ativo**: a cláusula `WHERE ("status" = 'SCHEDULED')` garante que agendamentos com status `CANCELLED` não impeçam novos agendamentos para o mesmo intervalo.
+- **Tradução transacional**: caso ocorra tentativa simultânea, o PostgreSQL aborta a transação conflitante com o erro `23P01` (`exclusion_violation`), que a API intercepta e converte em resposta HTTP `409 Conflict`.
+
+### Como testar concorrência
+
+Os testes automatizados cobrem cenários concorrentes disparando requisições em paralelo (`Promise.all`):
+
+```bash
+npm test -w backend -- appointment-concurrency.test.ts
+```
+
+Ou execute a suíte de testes completa:
+
+```bash
+npm test
+```
+
+Cenários validados na concorrência:
+- Duas requisições simultâneas para o mesmo profissional e horário: exatamente uma retorna `201 Created` e a outra retorna `409 Conflict`.
+- Reserva das 10:00–10:45 impede tentativa às 10:30 (`409`).
+- Reserva das 10:45 é permitida após uma de 10:00–10:45 (`201`).
+- Dois profissionais diferentes podem ser agendados simultaneamente no mesmo horário (`201`).
+- Cancelamento de reserva (`PATCH /appointments/:id/cancel`) libera o intervalo imediatamente.
+- Disponibilidade (`GET /availability`) remove horários ocupados por reservas ativas e ignora canceladas.
+
 ## Próximas entregas
 
 1. Organizações, autenticação e isolamento de dados.

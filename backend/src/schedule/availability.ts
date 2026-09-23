@@ -1,4 +1,5 @@
 import type {
+  Appointment,
   Prisma,
   Professional,
   ProfessionalService,
@@ -176,6 +177,9 @@ export type AvailabilityDatabase = {
       args: Prisma.ProfessionalWorkScheduleFindManyArgs,
     ) => Promise<ProfessionalWorkSchedule[]>;
   };
+  appointment?: {
+    findMany: (args: Prisma.AppointmentFindManyArgs) => Promise<Appointment[]>;
+  };
 };
 
 export interface AvailabilityResult {
@@ -245,6 +249,30 @@ export async function getAvailability(
     intervalMinutes: 15,
   });
 
+  // Buscar reservas ativas do profissional para remover horários ocupados
+  const appointments = db.appointment
+    ? await db.appointment.findMany({
+        where: {
+          professionalId: query.professionalId,
+          status: 'SCHEDULED',
+        },
+      })
+    : [];
+
+  const availableSlots = slots.filter((slot) => {
+    // Horário do slot no fuso padrão America/Sao_Paulo (-03:00)
+    const slotStart = new Date(`${query.date}T${slot}:00-03:00`);
+    const slotEnd = new Date(slotStart.getTime() + service.durationMinutes * 60 * 1000);
+
+    const hasConflict = appointments.some((apt) => {
+      const aptStart = new Date(apt.startsAt).getTime();
+      const aptEnd = new Date(apt.endsAt).getTime();
+      return slotStart.getTime() < aptEnd && aptStart < slotEnd.getTime();
+    });
+
+    return !hasConflict;
+  });
+
   return {
     date: query.date,
     weekday,
@@ -252,7 +280,7 @@ export async function getAvailability(
     professionalId: query.professionalId,
     serviceId: query.serviceId,
     serviceDurationMinutes: service.durationMinutes,
-    slots,
-    availableSlots: slots,
+    slots: availableSlots,
+    availableSlots,
   };
 }
