@@ -1,4 +1,4 @@
-import { randomBytes, scrypt as scryptCallback } from 'node:crypto';
+import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 
 import { Prisma } from '@prisma/client';
@@ -45,10 +45,7 @@ export async function registerOrganizationOwner(input: z.infer<typeof registerBo
       return { organization, user };
     });
   } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2002'
-    ) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       throw new EmailAlreadyRegisteredError();
     }
 
@@ -61,6 +58,31 @@ export async function hashPassword(password: string) {
   const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
 
   return `scrypt$${salt}$${Buffer.from(derivedKey).toString('hex')}`;
+}
+
+export async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  const parts = storedHash.split('$');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') {
+    return false;
+  }
+
+  const [, salt, expectedHashHex] = parts;
+  if (!salt || !expectedHashHex) {
+    return false;
+  }
+
+  try {
+    const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
+    const expectedKey = Buffer.from(expectedHashHex, 'hex');
+
+    if (derivedKey.length !== expectedKey.length) {
+      return false;
+    }
+
+    return timingSafeEqual(derivedKey, expectedKey);
+  } catch {
+    return false;
+  }
 }
 
 export class EmailAlreadyRegisteredError extends Error {
