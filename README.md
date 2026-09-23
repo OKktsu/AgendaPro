@@ -61,6 +61,34 @@ npm run build
 npm run format:check
 ```
 
+## Autenticação e Contexto de Organização
+
+As rotas protegidas da API identificam o usuário autenticado, sua organização e seu papel (`role`) exclusivamente a partir do token JWT validado.
+
+### Enviando o token nas requisições
+
+Para acessar endpoints autenticados, envie o token JWT no cabeçalho HTTP `Authorization` com o esquema `Bearer`:
+
+```http
+Authorization: Bearer <SEU_TOKEN_JWT>
+```
+
+#### Exemplos com `curl`
+
+1. Consultar os dados do usuário autenticado e contexto da organização (`GET /me`):
+
+   ```bash
+   curl -H "Authorization: Bearer SEU_TOKEN_JWT" http://localhost:3000/me
+   ```
+
+2. Acessar área restrita a proprietários (`GET /owner-area`, requer papel `OWNER`):
+
+   ```bash
+   curl -H "Authorization: Bearer SEU_TOKEN_JWT" http://localhost:3000/owner-area
+   ```
+
+> **Segurança multitenant**: O contexto de organização e privilégios é derivado unicamente do token JWT. O backend rejeita tentativas de manipulação ou troca de empresa via `body`, `query` ou `params`.
+
 ## Próximas entregas
 
 1. Organizações, autenticação e isolamento de dados.

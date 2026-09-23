@@ -8,6 +8,12 @@ export type AuthenticatedUser = {
   organizationId: string;
 };
 
+export type TenantContext = {
+  userId: string;
+  organizationId: string;
+  role: 'OWNER' | 'STAFF';
+};
+
 export type JwtPayload = AuthenticatedUser & {
   sub?: string;
   iat?: number;
