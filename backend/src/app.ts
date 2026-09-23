@@ -24,6 +24,17 @@ import {
   NotFoundError,
   type CatalogDatabase,
 } from './catalog/catalog.js';
+import {
+  createWorkSchedule,
+  createWorkScheduleSchema,
+  deleteWorkSchedule,
+  deleteWorkScheduleParamsSchema,
+  listWorkSchedules,
+  NotFoundError as ScheduleNotFoundError,
+  professionalParamsSchema,
+  ScheduleConflictError,
+  type WorkScheduleDatabase,
+} from './schedule/work-schedule.js';
 
 type AppDependencies = {
   registerOrganizationOwner?: typeof registerOrganizationOwner;
@@ -35,6 +46,10 @@ type AppDependencies = {
   createProfessional?: typeof createProfessional;
   listProfessionals?: typeof listProfessionals;
   assignProfessionalToService?: typeof assignProfessionalToService;
+  workScheduleDatabase?: WorkScheduleDatabase;
+  createWorkSchedule?: typeof createWorkSchedule;
+  listWorkSchedules?: typeof listWorkSchedules;
+  deleteWorkSchedule?: typeof deleteWorkSchedule;
 };
 
 export function buildApp(dependencies: AppDependencies = {}) {
@@ -54,6 +69,11 @@ export function buildApp(dependencies: AppDependencies = {}) {
   const svcListProfessionals = dependencies.listProfessionals ?? listProfessionals;
   const svcAssignProfessional =
     dependencies.assignProfessionalToService ?? assignProfessionalToService;
+
+  const workScheduleDb = dependencies.workScheduleDatabase;
+  const svcCreateWorkSchedule = dependencies.createWorkSchedule ?? createWorkSchedule;
+  const svcListWorkSchedules = dependencies.listWorkSchedules ?? listWorkSchedules;
+  const svcDeleteWorkSchedule = dependencies.deleteWorkSchedule ?? deleteWorkSchedule;
 
   app.register(cors, { origin: true });
 
@@ -222,6 +242,122 @@ export function buildApp(dependencies: AppDependencies = {}) {
         });
       } catch (error) {
         if (error instanceof NotFoundError) {
+          return reply.code(404).send({ message: error.message });
+        }
+
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/professionals/:professionalId/work-schedules',
+    { preHandler: requireOwner },
+    async (request, reply) => {
+      const parsedParams = professionalParamsSchema.safeParse(request.params);
+
+      if (!parsedParams.success) {
+        return reply.code(400).send({
+          message: 'Parâmetros de rota inválidos.',
+          issues: parsedParams.error.flatten().fieldErrors,
+        });
+      }
+
+      const parsedBody = createWorkScheduleSchema.safeParse(request.body);
+
+      if (!parsedBody.success) {
+        return reply.code(400).send({
+          message: 'Dados de horário de trabalho inválidos.',
+          issues: parsedBody.error.flatten().fieldErrors,
+        });
+      }
+
+      const tenantContext = getTenantContext(request);
+
+      try {
+        const schedule = await svcCreateWorkSchedule(
+          parsedBody.data,
+          parsedParams.data.professionalId,
+          tenantContext.organizationId,
+          workScheduleDb,
+        );
+
+        return reply.code(201).send({ schedule, ...schedule });
+      } catch (error) {
+        if (error instanceof ScheduleNotFoundError) {
+          return reply.code(404).send({ message: error.message });
+        }
+
+        if (error instanceof ScheduleConflictError) {
+          return reply.code(409).send({ message: error.message });
+        }
+
+        throw error;
+      }
+    },
+  );
+
+  app.get(
+    '/professionals/:professionalId/work-schedules',
+    { preHandler: requireOwner },
+    async (request, reply) => {
+      const parsedParams = professionalParamsSchema.safeParse(request.params);
+
+      if (!parsedParams.success) {
+        return reply.code(400).send({
+          message: 'Parâmetros de rota inválidos.',
+          issues: parsedParams.error.flatten().fieldErrors,
+        });
+      }
+
+      const tenantContext = getTenantContext(request);
+
+      try {
+        const schedules = await svcListWorkSchedules(
+          parsedParams.data.professionalId,
+          tenantContext.organizationId,
+          workScheduleDb,
+        );
+
+        return reply.code(200).send({ schedules, workSchedules: schedules });
+      } catch (error) {
+        if (error instanceof ScheduleNotFoundError) {
+          return reply.code(404).send({ message: error.message });
+        }
+
+        throw error;
+      }
+    },
+  );
+
+  app.delete(
+    '/work-schedules/:id',
+    { preHandler: requireOwner },
+    async (request, reply) => {
+      const parsedParams = deleteWorkScheduleParamsSchema.safeParse(request.params);
+
+      if (!parsedParams.success) {
+        return reply.code(400).send({
+          message: 'Parâmetros de rota inválidos.',
+          issues: parsedParams.error.flatten().fieldErrors,
+        });
+      }
+
+      const tenantContext = getTenantContext(request);
+
+      try {
+        await svcDeleteWorkSchedule(
+          parsedParams.data.id,
+          tenantContext.organizationId,
+          workScheduleDb,
+        );
+
+        return reply.code(200).send({
+          message: 'Horário de trabalho removido com sucesso.',
+          id: parsedParams.data.id,
+        });
+      } catch (error) {
+        if (error instanceof ScheduleNotFoundError) {
           return reply.code(404).send({ message: error.message });
         }
 
