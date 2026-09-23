@@ -35,6 +35,13 @@ import {
   ScheduleConflictError,
   type WorkScheduleDatabase,
 } from './schedule/work-schedule.js';
+import {
+  availabilityQuerySchema,
+  getAvailability,
+  NotFoundError as AvailabilityNotFoundError,
+  ServiceNotProvidedByProfessionalError,
+  type AvailabilityDatabase,
+} from './schedule/availability.js';
 
 type AppDependencies = {
   registerOrganizationOwner?: typeof registerOrganizationOwner;
@@ -50,6 +57,8 @@ type AppDependencies = {
   createWorkSchedule?: typeof createWorkSchedule;
   listWorkSchedules?: typeof listWorkSchedules;
   deleteWorkSchedule?: typeof deleteWorkSchedule;
+  availabilityDatabase?: AvailabilityDatabase;
+  getAvailability?: typeof getAvailability;
 };
 
 export function buildApp(dependencies: AppDependencies = {}) {
@@ -74,6 +83,9 @@ export function buildApp(dependencies: AppDependencies = {}) {
   const svcCreateWorkSchedule = dependencies.createWorkSchedule ?? createWorkSchedule;
   const svcListWorkSchedules = dependencies.listWorkSchedules ?? listWorkSchedules;
   const svcDeleteWorkSchedule = dependencies.deleteWorkSchedule ?? deleteWorkSchedule;
+
+  const availabilityDb = dependencies.availabilityDatabase;
+  const svcGetAvailability = dependencies.getAvailability ?? getAvailability;
 
   app.register(cors, { origin: true });
 
@@ -330,41 +342,73 @@ export function buildApp(dependencies: AppDependencies = {}) {
     },
   );
 
-  app.delete(
-    '/work-schedules/:id',
-    { preHandler: requireOwner },
-    async (request, reply) => {
-      const parsedParams = deleteWorkScheduleParamsSchema.safeParse(request.params);
+  app.delete('/work-schedules/:id', { preHandler: requireOwner }, async (request, reply) => {
+    const parsedParams = deleteWorkScheduleParamsSchema.safeParse(request.params);
 
-      if (!parsedParams.success) {
-        return reply.code(400).send({
-          message: 'Parâmetros de rota inválidos.',
-          issues: parsedParams.error.flatten().fieldErrors,
-        });
+    if (!parsedParams.success) {
+      return reply.code(400).send({
+        message: 'Parâmetros de rota inválidos.',
+        issues: parsedParams.error.flatten().fieldErrors,
+      });
+    }
+
+    const tenantContext = getTenantContext(request);
+
+    try {
+      await svcDeleteWorkSchedule(
+        parsedParams.data.id,
+        tenantContext.organizationId,
+        workScheduleDb,
+      );
+
+      return reply.code(200).send({
+        message: 'Horário de trabalho removido com sucesso.',
+        id: parsedParams.data.id,
+      });
+    } catch (error) {
+      if (error instanceof ScheduleNotFoundError) {
+        return reply.code(404).send({ message: error.message });
       }
 
-      const tenantContext = getTenantContext(request);
+      throw error;
+    }
+  });
 
-      try {
-        await svcDeleteWorkSchedule(
-          parsedParams.data.id,
-          tenantContext.organizationId,
-          workScheduleDb,
-        );
+  app.get('/availability', { preHandler: requireAuth }, async (request, reply) => {
+    const parsedQuery = availabilityQuerySchema.safeParse(request.query);
 
-        return reply.code(200).send({
-          message: 'Horário de trabalho removido com sucesso.',
-          id: parsedParams.data.id,
-        });
-      } catch (error) {
-        if (error instanceof ScheduleNotFoundError) {
-          return reply.code(404).send({ message: error.message });
-        }
+    if (!parsedQuery.success) {
+      return reply.code(400).send({
+        message: 'Parâmetros de consulta inválidos.',
+        issues: parsedQuery.error.flatten().fieldErrors,
+      });
+    }
 
-        throw error;
+    const tenantContext = getTenantContext(request);
+
+    try {
+      const availability = await svcGetAvailability(
+        parsedQuery.data,
+        tenantContext.organizationId,
+        availabilityDb,
+      );
+
+      return reply.code(200).send(availability);
+    } catch (error) {
+      if (
+        error instanceof AvailabilityNotFoundError ||
+        (error as Error)?.name === 'NotFoundError'
+      ) {
+        return reply.code(404).send({ message: (error as Error).message });
       }
-    },
-  );
+
+      if (error instanceof ServiceNotProvidedByProfessionalError) {
+        return reply.code(400).send({ message: error.message });
+      }
+
+      throw error;
+    }
+  });
 
   return app;
 }
