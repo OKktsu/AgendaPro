@@ -1,4 +1,5 @@
 import type {
+  Appointment,
   Prisma,
   Professional,
   ProfessionalService,
@@ -17,17 +18,20 @@ function createInMemoryAvailabilityDb(): AvailabilityDatabase & {
   services: Service[];
   professionalServices: ProfessionalService[];
   schedules: ProfessionalWorkSchedule[];
+  appointments: Appointment[];
 } {
   const professionals: Professional[] = [];
   const services: Service[] = [];
   const professionalServices: ProfessionalService[] = [];
   const schedules: ProfessionalWorkSchedule[] = [];
+  const appointments: Appointment[] = [];
 
   return {
     professionals,
     services,
     professionalServices,
     schedules,
+    appointments,
     professional: {
       findFirst: async ({ where }: Prisma.ProfessionalFindFirstArgs) => {
         return (
@@ -60,6 +64,15 @@ function createInMemoryAvailabilityDb(): AvailabilityDatabase & {
         return schedules
           .filter((s) => s.professionalId === where?.professionalId && s.weekday === where?.weekday)
           .sort((a, b) => a.startTime.localeCompare(b.startTime));
+      },
+    },
+    appointment: {
+      findMany: async ({ where }: Prisma.AppointmentFindManyArgs) => {
+        return appointments.filter(
+          (a) =>
+            (!where?.professionalId || a.professionalId === where.professionalId) &&
+            (!where?.status || a.status === where.status),
+        );
       },
     },
   };
@@ -464,5 +477,51 @@ describe('Rotas de Disponibilidade (GET /availability)', () => {
       headers: { authorization: `Bearer ${tokenOwnerA}` },
     });
     expect(resInvalidDate.statusCode).toBe(400);
+  });
+
+  it('remove intervalos ocupados por reservas ativas na rota GET /availability', async () => {
+    const { app, db, tokenOwnerA } = setupTestApp();
+
+    db.schedules.push({
+      id: 'sched-wed-1',
+      professionalId: profOrgA.id,
+      weekday: 'WEDNESDAY' as Weekday,
+      startTime: '09:00',
+      endTime: '12:00',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Reserva 10:00 às 10:45
+    db.appointments.push({
+      id: 'apt-wed-1',
+      organizationId: orgAId,
+      customerId: 'cust-1',
+      professionalId: profOrgA.id,
+      serviceId: serviceCorteA.id,
+      startsAt: new Date('2026-09-23T10:00:00-03:00'),
+      endsAt: new Date('2026-09-23T10:45:00-03:00'),
+      status: 'SCHEDULED',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/availability?professionalId=${profOrgA.id}&serviceId=${serviceCorteA.id}&date=2026-09-23`,
+      headers: { authorization: `Bearer ${tokenOwnerA}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+
+    // 10:30 deve ter sido removido (conflitante)
+    expect(body.availableSlots).not.toContain('10:30');
+    expect(body.slots).not.toContain('10:30');
+
+    // 09:15 e 10:45 encostam sem sobrepor e devem estar disponíveis
+    expect(body.availableSlots).toContain('09:15');
+    expect(body.availableSlots).toContain('10:45');
+    expect(body.availableSlots).toEqual(['09:00', '09:15', '10:45', '11:00', '11:15']);
   });
 });

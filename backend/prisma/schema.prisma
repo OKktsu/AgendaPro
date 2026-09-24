@@ -38,6 +38,8 @@ model Organization {
   users         User[]
   services      Service[]
   professionals Professional[]
+  customers     Customer[]
+  appointments  Appointment[]
 }
 
 model User {
@@ -63,6 +65,7 @@ model Service {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   professionals   ProfessionalService[]
+  appointments    Appointment[]
 }
 
 model Professional {
@@ -75,6 +78,7 @@ model Professional {
   updatedAt      DateTime              @updatedAt
   services       ProfessionalService[]
   workSchedules  ProfessionalWorkSchedule[]
+  appointments   Appointment[]
 }
 
 model ProfessionalService {
@@ -98,5 +102,45 @@ model ProfessionalWorkSchedule {
   updatedAt      DateTime     @updatedAt
 
   @@index([professionalId, weekday])
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+model Customer {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  name           String
+  phone          String
+  email          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  appointments   Appointment[]
+
+  @@index([organizationId])
+}
+
+model Appointment {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  customerId     String            @db.Uuid
+  customer       Customer          @relation(fields: [customerId], references: [id])
+  professionalId String            @db.Uuid
+  professional   Professional      @relation(fields: [professionalId], references: [id])
+  serviceId      String            @db.Uuid
+  service        Service           @relation(fields: [serviceId], references: [id])
+  startsAt       DateTime
+  endsAt         DateTime
+  status         AppointmentStatus @default(SCHEDULED)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([organizationId])
+  @@index([professionalId, startsAt])
+  @@index([customerId])
 }
 

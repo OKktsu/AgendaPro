@@ -1,4 +1,5 @@
 import type {
+  Appointment,
   Prisma,
   Professional,
   ProfessionalService,
@@ -297,6 +298,7 @@ describe('Serviço getAvailability (Lógica de orquestração com banco em memó
   function createMockDb(): AvailabilityDatabase & {
     schedules: ProfessionalWorkSchedule[];
     professionalServices: ProfessionalService[];
+    appointments: Appointment[];
   } {
     const schedules: ProfessionalWorkSchedule[] = [];
     const professionalServices: ProfessionalService[] = [
@@ -307,9 +309,12 @@ describe('Serviço getAvailability (Lógica de orquestração com banco em memó
       },
     ];
 
+    const appointments: Appointment[] = [];
+
     return {
       schedules,
       professionalServices,
+      appointments,
       professional: {
         findFirst: async ({ where }: Prisma.ProfessionalFindFirstArgs) => {
           if (where?.id === profA.id && where?.organizationId === profA.organizationId) {
@@ -349,6 +354,15 @@ describe('Serviço getAvailability (Lógica de orquestração com banco em memó
         findMany: async ({ where }: Prisma.ProfessionalWorkScheduleFindManyArgs) => {
           return schedules.filter(
             (s) => s.professionalId === where?.professionalId && s.weekday === where?.weekday,
+          );
+        },
+      },
+      appointment: {
+        findMany: async ({ where }: Prisma.AppointmentFindManyArgs) => {
+          return appointments.filter(
+            (a) =>
+              (!where?.professionalId || a.professionalId === where.professionalId) &&
+              (!where?.status || a.status === where.status),
           );
         },
       },
@@ -454,5 +468,139 @@ describe('Serviço getAvailability (Lógica de orquestração com banco em memó
     expect(result.weekday).toBe('MONDAY');
     expect(result.slots).toEqual([]);
     expect(result.availableSlots).toEqual([]);
+  });
+
+  it('remove horários ocupados por reservas ativas (10:00–10:45 remove 10:30, mas permite 09:15 e 10:45)', async () => {
+    const db = createMockDb();
+    // Expediente quarta-feira das 09:00 às 12:00
+    db.schedules.push({
+      id: 'sched-1',
+      professionalId: profA.id,
+      weekday: 'WEDNESDAY',
+      startTime: '09:00',
+      endTime: '12:00',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Reserva ativa das 10:00 às 10:45
+    db.appointments.push({
+      id: 'apt-1',
+      organizationId: orgA,
+      customerId: 'cust-1',
+      professionalId: profA.id,
+      serviceId: serviceCorte.id,
+      startsAt: new Date('2026-09-23T10:00:00-03:00'),
+      endsAt: new Date('2026-09-23T10:45:00-03:00'),
+      status: 'SCHEDULED',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const result = await getAvailability(
+      {
+        professionalId: profA.id,
+        serviceId: serviceCorte.id,
+        date: '2026-09-23',
+      },
+      orgA,
+      db,
+    );
+
+    // Slots originais seriam: 09:00, 09:15, 09:30, 09:45, 10:00, 10:15, 10:30, 10:45, 11:00, 11:15
+    // Com reserva 10:00–10:45:
+    // - 09:30 termina 10:15 (conflito -> removido)
+    // - 09:45 termina 10:30 (conflito -> removido)
+    // - 10:00 termina 10:45 (conflito -> removido)
+    // - 10:15 termina 11:00 (conflito -> removido)
+    // - 10:30 termina 11:15 (conflito -> removido)
+    // Disponíveis restantes: 09:00, 09:15, 10:45, 11:00, 11:15
+    expect(result.availableSlots).toEqual(['09:00', '09:15', '10:45', '11:00', '11:15']);
+    expect(result.availableSlots).not.toContain('10:30');
+    expect(result.availableSlots).toContain('10:45');
+    expect(result.availableSlots).toContain('09:15');
+    expect(result.slots).toEqual(result.availableSlots);
+  });
+
+  it('não remove horários para reservas com status CANCELLED', async () => {
+    const db = createMockDb();
+    db.schedules.push({
+      id: 'sched-1',
+      professionalId: profA.id,
+      weekday: 'WEDNESDAY',
+      startTime: '09:00',
+      endTime: '12:00',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Reserva cancelada
+    db.appointments.push({
+      id: 'apt-cancelled',
+      organizationId: orgA,
+      customerId: 'cust-1',
+      professionalId: profA.id,
+      serviceId: serviceCorte.id,
+      startsAt: new Date('2026-09-23T10:00:00-03:00'),
+      endsAt: new Date('2026-09-23T10:45:00-03:00'),
+      status: 'CANCELLED',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const result = await getAvailability(
+      {
+        professionalId: profA.id,
+        serviceId: serviceCorte.id,
+        date: '2026-09-23',
+      },
+      orgA,
+      db,
+    );
+
+    expect(result.availableSlots).toContain('10:00');
+    expect(result.availableSlots).toContain('10:30');
+    expect(result.availableSlots).toHaveLength(10);
+  });
+
+  it('não remove horários quando a reserva é de outro profissional', async () => {
+    const db = createMockDb();
+    db.schedules.push({
+      id: 'sched-1',
+      professionalId: profA.id,
+      weekday: 'WEDNESDAY',
+      startTime: '09:00',
+      endTime: '12:00',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Reserva de outro profissional
+    db.appointments.push({
+      id: 'apt-other-prof',
+      organizationId: orgA,
+      customerId: 'cust-1',
+      professionalId: 'outro-prof-uuid',
+      serviceId: serviceCorte.id,
+      startsAt: new Date('2026-09-23T10:00:00-03:00'),
+      endsAt: new Date('2026-09-23T10:45:00-03:00'),
+      status: 'SCHEDULED',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const result = await getAvailability(
+      {
+        professionalId: profA.id,
+        serviceId: serviceCorte.id,
+        date: '2026-09-23',
+      },
+      orgA,
+      db,
+    );
+
+    expect(result.availableSlots).toContain('10:00');
+    expect(result.availableSlots).toContain('10:30');
+    expect(result.availableSlots).toHaveLength(10);
   });
 });
