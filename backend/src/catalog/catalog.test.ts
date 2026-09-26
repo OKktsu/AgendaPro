@@ -261,19 +261,17 @@ describe('Serviços de domínio do catálogo e equipe', () => {
       },
       professional: {
         create: vi.fn(),
-        findMany: vi
-          .fn()
-          .mockResolvedValue([
-            {
-              id: 'p1',
-              name: 'Ana Beatriz',
-              organizationId: orgA,
-              active: true,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              services: [],
-            },
-          ]),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'p1',
+            name: 'Ana Beatriz',
+            organizationId: orgA,
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            services: [],
+          },
+        ]),
         findFirst: vi.fn(),
       },
       professionalService: {

@@ -136,18 +136,14 @@ export type WorkScheduleDatabase = {
     findFirst: (args: Prisma.ProfessionalFindFirstArgs) => Promise<Professional | null>;
   };
   professionalWorkSchedule: {
-    create: (
-      args: Prisma.ProfessionalWorkScheduleCreateArgs,
-    ) => Promise<ProfessionalWorkSchedule>;
+    create: (args: Prisma.ProfessionalWorkScheduleCreateArgs) => Promise<ProfessionalWorkSchedule>;
     findMany: (
       args: Prisma.ProfessionalWorkScheduleFindManyArgs,
     ) => Promise<ProfessionalWorkSchedule[]>;
     findFirst: (
       args: Prisma.ProfessionalWorkScheduleFindFirstArgs,
     ) => Promise<ProfessionalWorkSchedule | null>;
-    delete: (
-      args: Prisma.ProfessionalWorkScheduleDeleteArgs,
-    ) => Promise<ProfessionalWorkSchedule>;
+    delete: (args: Prisma.ProfessionalWorkScheduleDeleteArgs) => Promise<ProfessionalWorkSchedule>;
   };
 };
 
