@@ -144,7 +144,9 @@ describe('Rotas de Clientes e Reservas', () => {
 
   it('lista reservas com filtros e sem permitir trocar de organização', async () => {
     let receivedOrganizationId: string | undefined;
-    let receivedFilters: { professionalId?: string; customerId?: string } | undefined;
+    let receivedFilters:
+      | { professionalId?: string; customerId?: string; startDate?: string; endDate?: string }
+      | undefined;
     const appointment = makeAppointment();
     const app = createApp({
       listAppointments: async (organizationId, filters) => {
@@ -173,6 +175,74 @@ describe('Rotas de Clientes e Reservas', () => {
       customerId: appointment.customerId,
     });
     expect(response.json().appointments).toHaveLength(1);
+  });
+
+  it('lista reservas com intervalo startDate e endDate válidos', async () => {
+    let receivedFilters:
+      | { professionalId?: string; customerId?: string; startDate?: string; endDate?: string }
+      | undefined;
+    const appointment = makeAppointment();
+    const app = createApp({
+      listAppointments: async (_organizationId, filters) => {
+        receivedFilters = filters;
+        return [appointment];
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/appointments?startDate=2026-09-21&endDate=2026-09-27',
+      headers: auth(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(receivedFilters).toMatchObject({
+      startDate: '2026-09-21',
+      endDate: '2026-09-27',
+    });
+    expect(response.json().appointments).toHaveLength(1);
+  });
+
+  it('rejeita listagem de reservas com formato de data inválido', async () => {
+    let wasCalled = false;
+    const app = createApp({
+      listAppointments: async () => {
+        wasCalled = true;
+        return [];
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/appointments?startDate=data-invalida',
+      headers: auth(),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().message).toMatch(/Parâmetros de consulta inválidos/i);
+    expect(response.json().issues.startDate).toBeDefined();
+    expect(wasCalled).toBe(false);
+  });
+
+  it('rejeita listagem de reservas quando startDate for posterior a endDate', async () => {
+    let wasCalled = false;
+    const app = createApp({
+      listAppointments: async () => {
+        wasCalled = true;
+        return [];
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/appointments?startDate=2026-09-28&endDate=2026-09-21',
+      headers: auth(),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().message).toMatch(/Parâmetros de consulta inválidos/i);
+    expect(response.json().issues.endDate).toBeDefined();
+    expect(wasCalled).toBe(false);
   });
 
   it('traduz conflito de horário em HTTP 409 para o frontend', async () => {

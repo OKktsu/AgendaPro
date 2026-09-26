@@ -58,6 +58,7 @@ import {
   createAppointment,
   createAppointmentSchema,
   listAppointments,
+  listAppointmentsQuerySchema,
   AppointmentConflictError,
   AppointmentNotFoundError,
   AppointmentOutsideWorkScheduleError,
@@ -581,11 +582,19 @@ export function buildApp(dependencies: AppDependencies = {}) {
   });
 
   app.get('/appointments', { preHandler: requireAuth }, async (request, reply) => {
+    const parsedQuery = listAppointmentsQuerySchema.safeParse(request.query);
+
+    if (!parsedQuery.success) {
+      return reply.code(400).send({
+        message: 'Parâmetros de consulta inválidos.',
+        issues: parsedQuery.error.flatten().fieldErrors,
+      });
+    }
+
     const tenantContext = getTenantContext(request);
-    const query = request.query as { professionalId?: string; customerId?: string } | undefined;
     const appointments = await svcListAppointments(
       tenantContext.organizationId,
-      query,
+      parsedQuery.data,
       appointmentDb,
     );
 

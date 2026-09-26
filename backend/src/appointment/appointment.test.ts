@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cancelAppointment,
   createAppointment,
+  listAppointments,
   parseAppointmentDate,
   AppointmentConflictError,
   AppointmentNotFoundError,
@@ -218,6 +219,9 @@ function createMockAppointmentDb(): AppointmentDatabase &
           if (where?.professionalId && a.professionalId !== where.professionalId) return false;
           if (where?.customerId && a.customerId !== where.customerId) return false;
           if (where?.status && a.status !== where.status) return false;
+          const startsAtFilter = where?.startsAt as { gte?: Date; lte?: Date } | undefined;
+          if (startsAtFilter?.gte && a.startsAt < startsAtFilter.gte) return false;
+          if (startsAtFilter?.lte && a.startsAt > startsAtFilter.lte) return false;
           return true;
         });
       },
@@ -733,5 +737,95 @@ describe('Domínio de Reservas (Appointment)', () => {
     await expect(
       cancelAppointment('id-inexistente-1111-1111-111111111111', orgA, db),
     ).rejects.toThrow(AppointmentNotFoundError);
+  });
+
+  describe('Listagem de Reservas (listAppointments)', () => {
+    it('lista reservas da organização com filtro de intervalo de datas (startDate e endDate)', async () => {
+      const db = createMockAppointmentDb();
+      const { custA, profA, servCorte } = setupTestData(db);
+
+      // Reserva na quarta-feira (2026-09-23)
+      await createAppointment(
+        {
+          customerId: custA.id,
+          professionalId: profA.id,
+          serviceId: servCorte.id,
+          startsAt: '2026-09-23T10:00:00-03:00',
+        },
+        orgA,
+        db,
+      );
+
+      // Jornada para quinta-feira (2026-09-24)
+      db.schedules.push({
+        id: 'sched-thu-1',
+        professionalId: profA.id,
+        weekday: 'THURSDAY' as Weekday,
+        startTime: '09:00',
+        endTime: '18:00',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Reserva na quinta-feira (2026-09-24)
+      await createAppointment(
+        {
+          customerId: custA.id,
+          professionalId: profA.id,
+          serviceId: servCorte.id,
+          startsAt: '2026-09-24T14:00:00-03:00',
+        },
+        orgA,
+        db,
+      );
+
+      // Consulta no intervalo da semana (21 a 27 de setembro)
+      const weekApts = await listAppointments(
+        orgA,
+        { startDate: '2026-09-21', endDate: '2026-09-27' },
+        db,
+      );
+      expect(weekApts).toHaveLength(2);
+
+      // Consulta de apenas um dia específico (2026-09-23)
+      const singleDayApts = await listAppointments(
+        orgA,
+        { startDate: '2026-09-23', endDate: '2026-09-23' },
+        db,
+      );
+      expect(singleDayApts).toHaveLength(1);
+      expect(singleDayApts[0].startsAt.toISOString()).toContain('2026-09-23');
+
+      // Consulta em período fora do agendamento (próxima semana)
+      const nextWeekApts = await listAppointments(
+        orgA,
+        { startDate: '2026-09-28', endDate: '2026-10-04' },
+        db,
+      );
+      expect(nextWeekApts).toHaveLength(0);
+    });
+
+    it('filtra reservas por profissional preservando isolamento entre organizações', async () => {
+      const db = createMockAppointmentDb();
+      const { custA, profA, servCorte } = setupTestData(db);
+
+      await createAppointment(
+        {
+          customerId: custA.id,
+          professionalId: profA.id,
+          serviceId: servCorte.id,
+          startsAt: '2026-09-23T10:00:00-03:00',
+        },
+        orgA,
+        db,
+      );
+
+      const byProfA = await listAppointments(orgA, { professionalId: profA.id }, db);
+      expect(byProfA).toHaveLength(1);
+
+      // Tentativa de buscar na organização B retorna vazio
+      const byOrgB = await listAppointments(orgB, { professionalId: profA.id }, db);
+      expect(byOrgB).toHaveLength(0);
+    });
   });
 });
