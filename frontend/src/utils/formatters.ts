@@ -150,6 +150,110 @@ export function addDays(dateStr: string, days: number): string {
 }
 
 /**
+ * Retorna a segunda-feira da semana de uma data YYYY-MM-DD.
+ * A semana começa rigorosamente na segunda-feira.
+ */
+export function getWeekStart(dateStr: string): string {
+  if (!dateStr) return '';
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) return dateStr;
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const dayOfWeek = date.getUTCDay(); // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  return addDays(dateStr, diffToMonday);
+}
+
+/**
+ * Retorna o domingo da semana de uma data YYYY-MM-DD (fim da semana).
+ */
+export function getWeekEnd(dateStr: string): string {
+  const start = getWeekStart(dateStr);
+  return addDays(start, 6);
+}
+
+/**
+ * Retorna a lista dos 7 dias da semana (de segunda a domingo) a partir de uma data.
+ */
+export function getWeekDays(dateStr: string): string[] {
+  const start = getWeekStart(dateStr);
+  return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+}
+
+/**
+ * Adiciona ou subtrai semanas de uma data YYYY-MM-DD.
+ */
+export function addWeeks(dateStr: string, weeks: number): string {
+  return addDays(dateStr, weeks * 7);
+}
+
+/**
+ * Formata o intervalo da semana em texto legível para o cabeçalho.
+ * Ex: "21 a 27 de setembro de 2026", "28 de setembro a 4 de outubro de 2026"
+ */
+export function formatWeekRangeDisplay(dateStr: string): string {
+  if (!dateStr) return '';
+  const mondayStr = getWeekStart(dateStr);
+  const sundayStr = getWeekEnd(dateStr);
+  const [mYear, mMonth, mDay] = mondayStr.split('-').map(Number);
+  const [sYear, sMonth, sDay] = sundayStr.split('-').map(Number);
+
+  const monthNames = [
+    'janeiro',
+    'fevereiro',
+    'março',
+    'abril',
+    'maio',
+    'junho',
+    'julho',
+    'agosto',
+    'setembro',
+    'outubro',
+    'novembro',
+    'dezembro',
+  ];
+
+  if (mYear === sYear && mMonth === sMonth) {
+    return `${mDay} a ${sDay} de ${monthNames[mMonth - 1]} de ${mYear}`;
+  }
+  if (mYear === sYear) {
+    return `${mDay} de ${monthNames[mMonth - 1]} a ${sDay} de ${monthNames[sMonth - 1]} de ${mYear}`;
+  }
+  return `${mDay} de ${monthNames[mMonth - 1]} de ${mYear} a ${sDay} de ${monthNames[sMonth - 1]} de ${sYear}`;
+}
+
+/**
+ * Extrai a data YYYY-MM-DD de uma reserva com fuso horário seguro (America/Sao_Paulo).
+ */
+export function getAppointmentDateString(
+  startsAt: string | Date,
+  timeZone: string = DEFAULT_TIMEZONE,
+): string {
+  if (!startsAt) return '';
+  const date = startsAt instanceof Date ? startsAt : new Date(startsAt);
+  if (isNaN(date.getTime())) {
+    return typeof startsAt === 'string' ? startsAt.split('T')[0] : '';
+  }
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone,
+  });
+  return formatter.format(date);
+}
+
+/**
+ * Determina se a reserva ocorre no dia YYYY-MM-DD especificado.
+ */
+export function isAppointmentOnDate(
+  startsAt: string | Date,
+  dateStr: string,
+  timeZone: string = DEFAULT_TIMEZONE,
+): boolean {
+  return getAppointmentDateString(startsAt, timeZone) === dateStr;
+}
+
+/**
  * Mapeia o enum Weekday para o nome legível em português.
  */
 export const WEEKDAY_LABELS: Record<Weekday, string> = {
@@ -160,6 +264,16 @@ export const WEEKDAY_LABELS: Record<Weekday, string> = {
   FRIDAY: 'Sexta-feira',
   SATURDAY: 'Sábado',
   SUNDAY: 'Domingo',
+};
+
+export const WEEKDAY_SHORT_LABELS: Record<Weekday, string> = {
+  MONDAY: 'Seg',
+  TUESDAY: 'Ter',
+  WEDNESDAY: 'Qua',
+  THURSDAY: 'Qui',
+  FRIDAY: 'Sex',
+  SATURDAY: 'Sáb',
+  SUNDAY: 'Dom',
 };
 
 export function getWeekdayLabel(weekday: Weekday): string {

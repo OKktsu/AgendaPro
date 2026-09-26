@@ -1218,6 +1218,38 @@ select.input-field {
   letter-spacing: -0.02em;
 }
 
+.view-mode-switcher {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--color-surface-container);
+  border-radius: 8px;
+  padding: 0.25rem;
+  gap: 0.25rem;
+  border: 1px solid var(--color-border);
+}
+
+.view-mode-btn {
+  padding: 0.375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-ink-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.view-mode-btn:hover {
+  color: var(--color-ink);
+}
+
+.view-mode-btn-active {
+  background-color: #ffffff;
+  color: var(--color-primary);
+  box-shadow: var(--shadow-subtle);
+}
+
 .date-navigator {
   display: flex;
   align-items: center;
@@ -1515,6 +1547,218 @@ select.input-field {
 .agenda-card-price {
   font-weight: 700;
   color: var(--color-ink);
+}
+
+/* ==========================================================================
+   Visão Semanal da Agenda
+   ========================================================================== */
+.agenda-week-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.agenda-week-empty-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  background-color: var(--color-surface-container);
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  font-size: 0.875rem;
+  color: var(--color-ink-secondary);
+}
+
+.agenda-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(130px, 1fr));
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.75rem;
+  scrollbar-width: thin;
+}
+
+.agenda-week-col {
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+  box-shadow: var(--shadow-subtle);
+  transition: all 0.15s ease;
+}
+
+.agenda-week-col-today {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.agenda-week-col-header {
+  padding: 0.75rem 0.875rem;
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.agenda-week-col-today .agenda-week-col-header {
+  background-color: var(--color-primary-container);
+}
+
+.week-col-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.week-col-day-name {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-ink-muted);
+}
+
+.agenda-week-col-today .week-col-day-name {
+  color: var(--color-primary);
+}
+
+.week-col-today-badge {
+  font-size: 0.625rem;
+  font-weight: 800;
+  background-color: var(--color-primary);
+  color: #ffffff;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 9999px;
+  text-transform: uppercase;
+}
+
+.week-col-header-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.week-col-date-num {
+  font-size: 0.9375rem;
+  font-weight: 800;
+  color: var(--color-ink);
+}
+
+.week-col-count {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 0.125rem 0.375rem;
+  border-radius: 9999px;
+  color: var(--color-ink-secondary);
+}
+
+.agenda-week-col-body {
+  padding: 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.week-day-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-ink-muted);
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: 8px;
+  background-color: #fafbfc;
+}
+
+.agenda-week-card {
+  position: relative;
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  overflow: hidden;
+  display: flex;
+}
+
+.agenda-week-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: var(--shadow-card);
+}
+
+.agenda-week-card-active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+
+.agenda-week-card-cancelled {
+  opacity: 0.65;
+  background-color: #fffaf9;
+}
+
+.agenda-week-card-strip {
+  width: 4px;
+  flex-shrink: 0;
+}
+
+.agenda-week-card-content {
+  flex: 1;
+  padding: 0.5rem 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.agenda-week-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+
+.agenda-week-card-time {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--color-ink-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.agenda-week-card-service {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-ink);
+  line-height: 1.2;
+}
+
+.agenda-week-card-cancelled .agenda-week-card-service {
+  text-decoration: line-through;
+}
+
+.agenda-week-card-customer {
+  font-size: 0.75rem;
+  color: var(--color-ink-secondary);
+  font-weight: 500;
+}
+
+.agenda-week-card-prof {
+  font-size: 0.6875rem;
+  color: var(--color-ink-muted);
+  margin-top: 0.125rem;
 }
 
 /* Painel Inspector Lateral */

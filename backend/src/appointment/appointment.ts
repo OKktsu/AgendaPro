@@ -80,6 +80,54 @@ export const appointmentParamsSchema = z.object({
   id: z.string().uuid('ID da reserva inválido.'),
 });
 
+export function parseAppointmentFilterEndDate(input: string | Date): Date {
+  if (input instanceof Date) {
+    return input;
+  }
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return parseAppointmentDate(`${trimmed}T23:59:59.999-03:00`);
+    }
+    return parseAppointmentDate(trimmed);
+  }
+  return new Date(input);
+}
+
+export const listAppointmentsQuerySchema = z
+  .object({
+    professionalId: z.string().uuid('ID do profissional inválido.').optional(),
+    customerId: z.string().uuid('ID do cliente inválido.').optional(),
+    startDate: z
+      .string({ invalid_type_error: 'A data inicial (startDate) deve ser uma string.' })
+      .refine((val) => !isNaN(parseAppointmentDate(val).getTime()), {
+        message: 'Data inicial (startDate) inválida.',
+      })
+      .optional(),
+    endDate: z
+      .string({ invalid_type_error: 'A data final (endDate) deve ser uma string.' })
+      .refine((val) => !isNaN(parseAppointmentDate(val).getTime()), {
+        message: 'Data final (endDate) inválida.',
+      })
+      .optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        const start = parseAppointmentDate(data.startDate).getTime();
+        const end = parseAppointmentFilterEndDate(data.endDate).getTime();
+        return start <= end;
+      }
+      return true;
+    },
+    {
+      message: 'A data inicial (startDate) deve ser menor ou igual à data final (endDate).',
+      path: ['endDate'],
+    },
+  );
+
+export type ListAppointmentsFilters = z.infer<typeof listAppointmentsQuerySchema>;
+
 export { CustomerNotFoundError };
 
 export class ProfessionalNotFoundError extends Error {
@@ -322,14 +370,25 @@ export async function cancelAppointment(
 
 export async function listAppointments(
   organizationId: string,
-  filters: { professionalId?: string; customerId?: string } = {},
+  filters: ListAppointmentsFilters = {},
   db: AppointmentDatabase = prisma,
 ): Promise<Appointment[]> {
+  const startsAtFilter: Prisma.DateTimeFilter = {};
+  if (filters.startDate) {
+    startsAtFilter.gte = parseAppointmentDate(filters.startDate);
+  }
+  if (filters.endDate) {
+    startsAtFilter.lte = parseAppointmentFilterEndDate(filters.endDate);
+  }
+
+  const hasDateFilter = Boolean(filters.startDate || filters.endDate);
+
   return await db.appointment.findMany({
     where: {
       organizationId,
       ...(filters.professionalId ? { professionalId: filters.professionalId } : {}),
       ...(filters.customerId ? { customerId: filters.customerId } : {}),
+      ...(hasDateFilter ? { startsAt: startsAtFilter } : {}),
     },
     orderBy: { startsAt: 'asc' },
   });
