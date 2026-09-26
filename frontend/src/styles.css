@@ -966,6 +966,61 @@ select.input-field {
   color: var(--color-ink-muted);
 }
 
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 440px;
+}
+
+.search-input-wrapper .search-icon {
+  position: absolute;
+  left: 0.875rem;
+  color: var(--color-ink-muted);
+  pointer-events: none;
+}
+
+.search-input-field {
+  width: 100%;
+  min-height: 42px;
+  padding: 0.5rem 2.25rem 0.5rem 2.5rem;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  color: var(--color-ink);
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.search-input-field:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 0.625rem;
+  background: none;
+  border: none;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border-radius: 4px;
+}
+
+.search-clear-btn:hover {
+  color: var(--color-ink);
+  background-color: var(--color-surface-container);
+}
+
 /* Equipe & Jornadas */
 .team-card {
   background-color: #ffffff;
