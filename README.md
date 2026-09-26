@@ -149,6 +149,7 @@ npm test
 ```
 
 Cenários validados na concorrência:
+
 - Duas requisições simultâneas para o mesmo profissional e horário: exatamente uma retorna `201 Created` e a outra retorna `409 Conflict`.
 - Reserva das 10:00–10:45 impede tentativa às 10:30 (`409`).
 - Reserva das 10:45 é permitida após uma de 10:00–10:45 (`201`).
@@ -156,9 +157,79 @@ Cenários validados na concorrência:
 - Cancelamento de reserva (`PATCH /appointments/:id/cancel`) libera o intervalo imediatamente.
 - Disponibilidade (`GET /availability`) remove horários ocupados por reservas ativas e ignora canceladas.
 
-## Próximas entregas
+## Frontend MVP (Interface Web)
 
-1. Organizações, autenticação e isolamento de dados.
-2. Serviços, profissionais, especialidades e horários de trabalho.
-3. Reservas transacionais sem conflitos de agenda.
-4. Interface de agenda e gestão do catálogo.
+A interface do usuário do AgendaPro é construída com React 19 + TypeScript + Vite, localizada em `frontend/`.
+
+### Configuração de Ambiente (`VITE_API_URL`)
+
+O frontend se comunica com a API Fastify centralizada. Para configurar o endereço do backend:
+
+1. Crie o arquivo de ambiente em `frontend/`:
+
+   ```bash
+   cp frontend/.env.example frontend/.env
+   ```
+
+   No Windows PowerShell:
+
+   ```powershell
+   Copy-Item frontend\.env.example frontend\.env
+   ```
+
+2. O conteúdo padrão define:
+   ```env
+   VITE_API_URL=http://localhost:3000
+   ```
+
+### Como Executar Frontend e Backend
+
+- **Simultaneamente (recomendado)**:
+
+  ```bash
+  npm run dev
+  ```
+
+  Inicia concorrentemente o frontend em `http://localhost:5173` e a API em `http://localhost:3000`.
+
+- **Apenas o Frontend**:
+
+  ```bash
+  npm run dev -w frontend
+  ```
+
+- **Apenas o Backend**:
+  ```bash
+  npm run dev -w backend
+  ```
+
+### Fluxo Resumido de Uso da Aplicação
+
+1. **Cadastrar Empresa**:
+   - Acesse `http://localhost:5173` e selecione a aba **"Cadastrar Empresa"**.
+   - Preencha o nome do estabelecimento, seu nome completo, e-mail e senha (mínimo 8 caracteres).
+   - O sistema cria a organização e a conta de usuário com papel `OWNER`.
+2. **Fazer Login**:
+   - Entre com as credenciais cadastradas na aba **"Entrar"**.
+   - A sessão é persistida via JWT e validada automaticamente via `GET /auth/me` ao recarregar a página.
+3. **Criar Serviços**:
+   - Navegue até a aba **"Serviços"** no menu lateral.
+   - Clique em **"Novo Serviço"**, informe o nome, duração em minutos e preço em reais (ex: `85,00`).
+4. **Criar Profissional e Definir Expediente**:
+   - Navegue até a aba **"Equipe"**.
+   - Clique em **"Novo Profissional"** e insira o nome.
+   - No card do profissional criado, clique em **"Vincular Serviço"** e associe os serviços executados por ele.
+   - Em seguida, clique em **"Adicionar Horário"** para cadastrar os dias da semana e horários de início e término (ex: Segunda-feira das 08:00 às 18:00).
+5. **Cadastrar Cliente**:
+   - Navegue até a aba **"Clientes"**.
+   - Clique em **"Novo Cliente"**, informe o nome, telefone e e-mail (opcional).
+6. **Agendar Reserva sem Conflitos**:
+   - Acesse a aba **"Agenda"**.
+   - Clique no botão **"+ Novo Agendamento"**.
+   - Escolha a data, o cliente, o profissional e o serviço.
+   - O sistema consulta automaticamente a rota `GET /availability` e exibe os horários livres como botões de seleção rápida.
+   - Selecione o horário desejado e clique em **"Confirmar Reserva"**.
+   - Em caso de concorrência ou conflito simultâneo (`409 Conflict`), a interface exibirá a mensagem orientando a escolher outro horário disponível.
+7. **Cancelar Reserva**:
+   - Na lista da Agenda Diária, selecione o atendimento desejado para inspecionar os detalhes no painel lateral.
+   - Clique em **"Cancelar Agendamento"** e confirme a operação. O slot será liberado instantaneamente.
