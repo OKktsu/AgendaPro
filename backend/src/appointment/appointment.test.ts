@@ -23,7 +23,13 @@ import {
   ServiceNotProvidedByProfessionalError,
   type AppointmentDatabase,
 } from './appointment.js';
-import { createCustomer, getCustomer, listCustomers, type CustomerDatabase } from './customer.js';
+import {
+  createCustomer,
+  getCustomer,
+  listCustomers,
+  updateCustomer,
+  type CustomerDatabase,
+} from './customer.js';
 
 function createMockAppointmentDb(): AppointmentDatabase &
   CustomerDatabase & {
@@ -72,9 +78,67 @@ function createMockAppointmentDb(): AppointmentDatabase &
         );
       },
       findMany: async ({ where }: Prisma.CustomerFindManyArgs) => {
-        return customers.filter(
-          (c) => !where?.organizationId || c.organizationId === where.organizationId,
-        );
+        return customers.filter((c) => {
+          if (where?.organizationId && c.organizationId !== where.organizationId) {
+            return false;
+          }
+          if (where?.OR && Array.isArray(where.OR)) {
+            const matchesOr = where.OR.some((condition) => {
+              const nameContains =
+                typeof condition.name === 'object' && condition.name && 'contains' in condition.name
+                  ? (condition.name.contains as string)
+                  : typeof condition.name === 'string'
+                    ? condition.name
+                    : undefined;
+              if (nameContains) {
+                return c.name.toLowerCase().includes(nameContains.toLowerCase());
+              }
+
+              const phoneContains =
+                typeof condition.phone === 'object' &&
+                condition.phone &&
+                'contains' in condition.phone
+                  ? (condition.phone.contains as string)
+                  : typeof condition.phone === 'string'
+                    ? condition.phone
+                    : undefined;
+              if (phoneContains) {
+                return c.phone.toLowerCase().includes(phoneContains.toLowerCase());
+              }
+
+              const emailContains =
+                typeof condition.email === 'object' &&
+                condition.email &&
+                'contains' in condition.email
+                  ? (condition.email.contains as string)
+                  : typeof condition.email === 'string'
+                    ? condition.email
+                    : undefined;
+              if (emailContains) {
+                return c.email?.toLowerCase().includes(emailContains.toLowerCase()) ?? false;
+              }
+              return false;
+            });
+            if (!matchesOr) return false;
+          }
+          return true;
+        });
+      },
+      update: async ({ where, data }: Prisma.CustomerUpdateArgs) => {
+        const index = customers.findIndex((c) => c.id === where.id);
+        if (index === -1) {
+          throw new Error('Record to update not found.');
+        }
+        const existing = customers[index];
+        const updated: Customer = {
+          ...existing,
+          name: (data.name as string | undefined) ?? existing.name,
+          phone: (data.phone as string | undefined) ?? existing.phone,
+          email: data.email !== undefined ? (data.email as string | null) : existing.email,
+          updatedAt: new Date(),
+        };
+        customers[index] = updated;
+        return updated;
       },
     },
     professional: {
@@ -216,6 +280,102 @@ describe('Domínio de Clientes (Customer)', () => {
     expect(listA[0].name).toBe('Cliente A');
 
     await expect(getCustomer(custB.id, orgA, db)).rejects.toThrow(CustomerNotFoundError);
+  });
+
+  it('atualiza cliente com sucesso mantendo organização', async () => {
+    const db = createMockAppointmentDb();
+    const created = await createCustomer(
+      { name: 'Maria Souza', phone: '11999991111', email: 'maria@antigo.com' },
+      orgA,
+      db,
+    );
+
+    const updated = await updateCustomer(
+      created.id,
+      { name: 'Maria Souza Atualizada', phone: '11988882222', email: 'maria@novo.com' },
+      orgA,
+      db,
+    );
+
+    expect(updated.id).toBe(created.id);
+    expect(updated.organizationId).toBe(orgA);
+    expect(updated.name).toBe('Maria Souza Atualizada');
+    expect(updated.phone).toBe('11988882222');
+    expect(updated.email).toBe('maria@novo.com');
+  });
+
+  it('permite atualizar apenas campos parciais do cliente', async () => {
+    const db = createMockAppointmentDb();
+    const created = await createCustomer(
+      { name: 'Lucas Silva', phone: '11999993333', email: 'lucas@exemplo.com' },
+      orgA,
+      db,
+    );
+
+    const updated = await updateCustomer(created.id, { phone: '11977774444' }, orgA, db);
+
+    expect(updated.name).toBe('Lucas Silva');
+    expect(updated.phone).toBe('11977774444');
+    expect(updated.email).toBe('lucas@exemplo.com');
+  });
+
+  it('rejeita atualização se o cliente pertencer a outra organização', async () => {
+    const db = createMockAppointmentDb();
+    const custB = await createCustomer(
+      { name: 'Cliente de Outra Empresa', phone: '11999995555' },
+      orgB,
+      db,
+    );
+
+    await expect(updateCustomer(custB.id, { name: 'Tentativa Invasão' }, orgA, db)).rejects.toThrow(
+      CustomerNotFoundError,
+    );
+  });
+
+  it('rejeita atualização de cliente inexistente', async () => {
+    const db = createMockAppointmentDb();
+
+    await expect(
+      updateCustomer('00000000-0000-0000-0000-000000000000', { name: 'Inexistente' }, orgA, db),
+    ).rejects.toThrow(CustomerNotFoundError);
+  });
+
+  it('busca clientes por nome, telefone ou e-mail com isolamento', async () => {
+    const db = createMockAppointmentDb();
+    await createCustomer(
+      { name: 'Bruno Santos', phone: '11911112222', email: 'bruno.santos@email.com' },
+      orgA,
+      db,
+    );
+    await createCustomer(
+      { name: 'Carla Dias', phone: '11933334444', email: 'carla@outro.com' },
+      orgA,
+      db,
+    );
+    await createCustomer(
+      { name: 'Bruno Outra Empresa', phone: '11955556666', email: 'bruno@outraempresa.com' },
+      orgB,
+      db,
+    );
+
+    // Busca por nome
+    const byName = await listCustomers(orgA, { search: 'bruno' }, db);
+    expect(byName).toHaveLength(1);
+    expect(byName[0].name).toBe('Bruno Santos');
+
+    // Busca por telefone
+    const byPhone = await listCustomers(orgA, { search: '3333' }, db);
+    expect(byPhone).toHaveLength(1);
+    expect(byPhone[0].name).toBe('Carla Dias');
+
+    // Busca por e-mail
+    const byEmail = await listCustomers(orgA, { search: 'santos@email' }, db);
+    expect(byEmail).toHaveLength(1);
+    expect(byEmail[0].name).toBe('Bruno Santos');
+
+    // Busca de termo que só existe na organização B não retorna nada para a organização A
+    const crossOrg = await listCustomers(orgA, { search: 'outraempresa' }, db);
+    expect(crossOrg).toHaveLength(0);
   });
 });
 
