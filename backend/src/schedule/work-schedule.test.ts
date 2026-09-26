@@ -127,7 +127,8 @@ describe('Validação de esquemas de horários de trabalho', () => {
       expect(
         professionalParamsSchema.safeParse({
           professionalId: 'invalido',
-        }).success).toBe(false);
+        }).success,
+      ).toBe(false);
     });
 
     it('valida UUID válido para deleteWorkScheduleParamsSchema', () => {
@@ -140,7 +141,8 @@ describe('Validação de esquemas de horários de trabalho', () => {
       expect(
         deleteWorkScheduleParamsSchema.safeParse({
           id: 'invalido',
-        }).success).toBe(false);
+        }).success,
+      ).toBe(false);
     });
   });
 });
@@ -496,9 +498,7 @@ describe('Serviço de horários de trabalho', () => {
       },
     };
 
-    await expect(listWorkSchedules(profIdA, orgIdB, mockDb)).rejects.toThrow(
-      NotFoundError,
-    );
+    await expect(listWorkSchedules(profIdA, orgIdB, mockDb)).rejects.toThrow(NotFoundError);
   });
 
   it('exclui horário de trabalho existente pertencente à organização', async () => {
@@ -549,9 +549,7 @@ describe('Serviço de horários de trabalho', () => {
       },
     };
 
-    await expect(deleteWorkSchedule('inexistente', orgIdA, mockDb)).rejects.toThrow(
-      NotFoundError,
-    );
+    await expect(deleteWorkSchedule('inexistente', orgIdA, mockDb)).rejects.toThrow(NotFoundError);
   });
 
   it('rejeita exclusão se o profissional do horário pertencer a outra organização', async () => {
@@ -570,8 +568,6 @@ describe('Serviço de horários de trabalho', () => {
       },
     };
 
-    await expect(deleteWorkSchedule('schedule-1', orgIdB, mockDb)).rejects.toThrow(
-      NotFoundError,
-    );
+    await expect(deleteWorkSchedule('schedule-1', orgIdB, mockDb)).rejects.toThrow(NotFoundError);
   });
 });

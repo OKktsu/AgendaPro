@@ -40,10 +40,7 @@ function createInMemoryWorkScheduleDb(): WorkScheduleDatabase & {
         schedules.push(item);
         return item;
       },
-      findMany: async ({
-        where,
-        orderBy,
-      }: Prisma.ProfessionalWorkScheduleFindManyArgs) => {
+      findMany: async ({ where, orderBy }: Prisma.ProfessionalWorkScheduleFindManyArgs) => {
         let result = schedules.filter((s) => {
           if (where?.professionalId && s.professionalId !== where.professionalId) {
             return false;
