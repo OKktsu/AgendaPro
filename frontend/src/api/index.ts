@@ -14,6 +14,7 @@ import type {
   Professional,
   ProfessionalWithServices,
   Service,
+  UpdateCustomerInput,
   WorkSchedule,
 } from '../types/api.js';
 
@@ -122,14 +123,23 @@ export const professionalsApi = {
    Clientes
    ========================================================================== */
 export const customersApi = {
-  async list(): Promise<Customer[]> {
-    const res = await apiFetch<{ customers: Customer[] }>('/customers');
+  async list(search?: string): Promise<Customer[]> {
+    const query = search && search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+    const res = await apiFetch<{ customers: Customer[] }>(`/customers${query}`);
     return res.customers ?? [];
   },
 
   async create(data: CreateCustomerInput): Promise<Customer> {
     const res = await apiFetch<{ customer: Customer }>('/customers', {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.customer;
+  },
+
+  async update(id: string, data: UpdateCustomerInput): Promise<Customer> {
+    const res = await apiFetch<{ customer: Customer }>(`/customers/${id}`, {
+      method: 'PATCH',
       body: JSON.stringify(data),
     });
     return res.customer;

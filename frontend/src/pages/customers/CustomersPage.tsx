@@ -1,9 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { customersApi } from '../../api/index.js';
 import { Alert } from '../../components/common/Alert.js';
 import { Button } from '../../components/common/Button.js';
 import { EmptyState } from '../../components/common/EmptyState.js';
-import { MailIcon, PhoneIcon, PlusIcon, UsersIcon } from '../../components/common/Icons.js';
+import {
+  CloseIcon,
+  EditIcon,
+  MailIcon,
+  PhoneIcon,
+  PlusIcon,
+  SearchIcon,
+  UsersIcon,
+} from '../../components/common/Icons.js';
 import { Input } from '../../components/common/Input.js';
 import { Modal } from '../../components/common/Modal.js';
 import type { Customer } from '../../types/api.js';
@@ -11,22 +19,31 @@ import type { Customer } from '../../types/api.js';
 export const CustomersPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Create modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+
+  // Edit modal states
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
 
   // Alerts
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Form states
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-
-  const loadCustomers = async () => {
+  const loadCustomers = useCallback(async (search?: string) => {
     setIsLoading(true);
     try {
-      const data = await customersApi.list();
+      const data = await customersApi.list(search);
       setCustomers(data);
     } catch (err: unknown) {
       const error = err as { message?: string };
@@ -34,11 +51,15 @@ export const CustomersPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadCustomers();
-  }, []);
+    const timer = setTimeout(() => {
+      loadCustomers(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, loadCustomers]);
 
   const handleOpenCreateModal = () => {
     setName('');
@@ -78,6 +99,50 @@ export const CustomersPage: React.FC = () => {
       setErrorMessage(error.message || 'Falha ao cadastrar o cliente.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleOpenEditModal = (customer: Customer) => {
+    setEditingCustomer(customer);
+    setEditName(customer.name);
+    setEditPhone(customer.phone);
+    setEditEmail(customer.email || '');
+    setErrorMessage(null);
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCustomer) return;
+    setErrorMessage(null);
+
+    if (editName.trim().length < 2) {
+      setErrorMessage('O nome do cliente deve ter pelo menos 2 caracteres.');
+      return;
+    }
+
+    if (editPhone.trim().length < 8) {
+      setErrorMessage('O telefone deve ter pelo menos 8 dígitos.');
+      return;
+    }
+
+    setIsSubmittingEdit(true);
+    try {
+      const updated = await customersApi.update(editingCustomer.id, {
+        name: editName.trim(),
+        phone: editPhone.trim(),
+        email: editEmail.trim() ? editEmail.trim() : null,
+      });
+
+      setCustomers((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setSuccessMessage(`Cliente "${updated.name}" atualizado com sucesso!`);
+      setIsEditModalOpen(false);
+      setEditingCustomer(null);
+    } catch (err: unknown) {
+      const error = err as { message?: string };
+      setErrorMessage(error.message || 'Falha ao atualizar o cliente.');
+    } finally {
+      setIsSubmittingEdit(false);
     }
   };
 
@@ -126,6 +191,32 @@ export const CustomersPage: React.FC = () => {
         />
       )}
 
+      {/* Barra de Busca */}
+      <div className="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+        <div className="search-input-wrapper">
+          <SearchIcon size={18} className="search-icon" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar por nome, telefone ou e-mail..."
+            className="search-input-field"
+            aria-label="Buscar clientes"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="search-clear-btn"
+              title="Limpar busca"
+              aria-label="Limpar busca"
+            >
+              <CloseIcon size={16} />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
       {/* Content */}
       {isLoading ? (
         <div className="loading-state">
@@ -133,16 +224,29 @@ export const CustomersPage: React.FC = () => {
           <span>Carregando clientes...</span>
         </div>
       ) : customers.length === 0 ? (
-        <EmptyState
-          icon={<UsersIcon size={48} />}
-          title="Nenhum cliente cadastrado"
-          description="Cadastre clientes para vincular aos agendamentos e registrar seus atendimentos."
-          action={
-            <Button variant="primary" onClick={handleOpenCreateModal}>
-              Cadastrar Primeiro Cliente
-            </Button>
-          }
-        />
+        searchQuery.trim() ? (
+          <EmptyState
+            icon={<UsersIcon size={48} />}
+            title="Nenhum cliente encontrado"
+            description={`Não encontramos nenhum cliente correspondente a "${searchQuery.trim()}".`}
+            action={
+              <Button variant="secondary" onClick={() => setSearchQuery('')}>
+                Limpar Busca
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={<UsersIcon size={48} />}
+            title="Nenhum cliente cadastrado"
+            description="Cadastre clientes para vincular aos agendamentos e registrar seus atendimentos."
+            action={
+              <Button variant="primary" onClick={handleOpenCreateModal}>
+                Cadastrar Primeiro Cliente
+              </Button>
+            }
+          />
+        )
       ) : (
         <div className="card-grid">
           {customers.map((customer) => (
@@ -155,6 +259,17 @@ export const CustomersPage: React.FC = () => {
                     <span className="customer-id-tag">Cliente Ativo</span>
                   </div>
                 </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleOpenEditModal(customer)}
+                  className="flex items-center gap-1.5"
+                  title={`Editar ${customer.name}`}
+                >
+                  <EditIcon size={14} />
+                  <span>Editar</span>
+                </Button>
               </div>
 
               <div className="item-card-details">
@@ -197,6 +312,7 @@ export const CustomersPage: React.FC = () => {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Ex: Beatriz Mendes"
+            disabled={isSubmitting}
           />
 
           <Input
@@ -207,6 +323,7 @@ export const CustomersPage: React.FC = () => {
             onChange={(e) => setPhone(e.target.value)}
             placeholder="Ex: (11) 98452-1109"
             helperText="Número para contato e confirmação de agendamento."
+            disabled={isSubmitting}
           />
 
           <Input
@@ -215,6 +332,7 @@ export const CustomersPage: React.FC = () => {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Ex: beatriz@exemplo.com"
+            disabled={isSubmitting}
           />
 
           <div className="modal-actions">
@@ -228,6 +346,67 @@ export const CustomersPage: React.FC = () => {
             </Button>
             <Button type="submit" variant="primary" isLoading={isSubmitting}>
               Salvar Cliente
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Edição de Cliente */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          if (!isSubmittingEdit) {
+            setIsEditModalOpen(false);
+            setEditingCustomer(null);
+          }
+        }}
+        title="Editar Cliente"
+      >
+        <form onSubmit={handleUpdateCustomer} className="modal-form">
+          <Input
+            label="Nome do Cliente"
+            type="text"
+            required
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            placeholder="Ex: Beatriz Mendes"
+            disabled={isSubmittingEdit}
+          />
+
+          <Input
+            label="Telefone / Celular"
+            type="tel"
+            required
+            value={editPhone}
+            onChange={(e) => setEditPhone(e.target.value)}
+            placeholder="Ex: (11) 98452-1109"
+            helperText="Número para contato e confirmação de agendamento."
+            disabled={isSubmittingEdit}
+          />
+
+          <Input
+            label="E-mail (opcional)"
+            type="email"
+            value={editEmail}
+            onChange={(e) => setEditEmail(e.target.value)}
+            placeholder="Ex: beatriz@exemplo.com"
+            disabled={isSubmittingEdit}
+          />
+
+          <div className="modal-actions">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setIsEditModalOpen(false);
+                setEditingCustomer(null);
+              }}
+              disabled={isSubmittingEdit}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary" isLoading={isSubmittingEdit}>
+              Salvar Alterações
             </Button>
           </div>
         </form>

@@ -68,6 +68,22 @@ function createConcurrencyTestDb(): AppointmentDatabase &
           (c) => !where?.organizationId || c.organizationId === where.organizationId,
         );
       },
+      update: async ({ where, data }: Prisma.CustomerUpdateArgs) => {
+        const index = customers.findIndex((c) => c.id === where.id);
+        if (index === -1) {
+          throw new Error('Record to update not found.');
+        }
+        const existing = customers[index];
+        const updated: Customer = {
+          ...existing,
+          name: (data.name as string | undefined) ?? existing.name,
+          phone: (data.phone as string | undefined) ?? existing.phone,
+          email: data.email !== undefined ? (data.email as string | null) : existing.email,
+          updatedAt: new Date(),
+        };
+        customers[index] = updated;
+        return updated;
+      },
     },
     professional: {
       findFirst: async ({ where }: Prisma.ProfessionalFindFirstArgs) => {

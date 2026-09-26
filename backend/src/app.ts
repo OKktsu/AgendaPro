@@ -45,7 +45,11 @@ import {
 import {
   createCustomer,
   createCustomerSchema,
+  customerParamsSchema,
   listCustomers,
+  listCustomersQuerySchema,
+  updateCustomer,
+  updateCustomerSchema,
   type CustomerDatabase,
 } from './appointment/customer.js';
 import {
@@ -81,6 +85,7 @@ type AppDependencies = {
   getAvailability?: typeof getAvailability;
   customerDatabase?: CustomerDatabase;
   createCustomer?: typeof createCustomer;
+  updateCustomer?: typeof updateCustomer;
   listCustomers?: typeof listCustomers;
   appointmentDatabase?: AppointmentDatabase;
   createAppointment?: typeof createAppointment;
@@ -116,6 +121,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
 
   const customerDb = dependencies.customerDatabase;
   const svcCreateCustomer = dependencies.createCustomer ?? createCustomer;
+  const svcUpdateCustomer = dependencies.updateCustomer ?? updateCustomer;
   const svcListCustomers = dependencies.listCustomers ?? listCustomers;
 
   const appointmentDb = dependencies.appointmentDatabase;
@@ -467,10 +473,67 @@ export function buildApp(dependencies: AppDependencies = {}) {
   });
 
   app.get('/customers', { preHandler: requireAuth }, async (request, reply) => {
+    const parsedQuery = listCustomersQuerySchema.safeParse(request.query);
+
+    if (!parsedQuery.success) {
+      return reply.code(400).send({
+        message: 'Parâmetros de consulta inválidos.',
+        issues: parsedQuery.error.flatten().fieldErrors,
+      });
+    }
+
+    const searchTerm = (parsedQuery.data.search ?? parsedQuery.data.q)?.trim();
     const tenantContext = getTenantContext(request);
-    const customers = await svcListCustomers(tenantContext.organizationId, customerDb);
+    const customers = await svcListCustomers(
+      tenantContext.organizationId,
+      searchTerm ? { search: searchTerm } : undefined,
+      customerDb,
+    );
 
     return reply.code(200).send({ customers });
+  });
+
+  app.patch('/customers/:id', { preHandler: requireAuth }, async (request, reply) => {
+    const parsedParams = customerParamsSchema.safeParse(request.params);
+
+    if (!parsedParams.success) {
+      return reply.code(400).send({
+        message: 'Parâmetros de rota inválidos.',
+        issues: parsedParams.error.flatten().fieldErrors,
+      });
+    }
+
+    const parsedBody = updateCustomerSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({
+        message: 'Dados de cliente inválidos.',
+        issues: parsedBody.error.flatten().fieldErrors,
+      });
+    }
+
+    const tenantContext = getTenantContext(request);
+
+    try {
+      const customer = await svcUpdateCustomer(
+        parsedParams.data.id,
+        parsedBody.data,
+        tenantContext.organizationId,
+        customerDb,
+      );
+
+      return reply.code(200).send({
+        message: 'Cliente atualizado com sucesso.',
+        customer,
+        ...customer,
+      });
+    } catch (error) {
+      if (error instanceof CustomerNotFoundError) {
+        return reply.code(404).send({ message: error.message });
+      }
+
+      throw error;
+    }
   });
 
   app.post('/appointments', { preHandler: requireAuth }, async (request, reply) => {

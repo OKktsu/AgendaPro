@@ -107,6 +107,12 @@ export interface CreateCustomerInput {
   email?: string | null;
 }
 
+export interface UpdateCustomerInput {
+  name?: string;
+  phone?: string;
+  email?: string | null;
+}
+
 export type AppointmentStatus = 'SCHEDULED' | 'CANCELLED';
 
 export interface Appointment {
