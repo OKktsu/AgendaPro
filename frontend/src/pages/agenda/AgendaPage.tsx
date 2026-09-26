@@ -23,6 +23,7 @@ import {
   formatTimeRange,
   getTodayDateString,
 } from '../../utils/formatters.js';
+import { CancelAppointmentModal } from './CancelAppointmentModal.js';
 import { NewAppointmentModal } from './NewAppointmentModal.js';
 
 export const AgendaPage: React.FC = () => {
@@ -35,6 +36,7 @@ export const AgendaPage: React.FC = () => {
   const [services, setServices] = useState<Service[]>([]);
 
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+  const [appointmentToCancel, setAppointmentToCancel] = useState<Appointment | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -128,20 +130,22 @@ export const AgendaPage: React.FC = () => {
   const handleNextDay = () => setSelectedDate((prev) => addDays(prev, 1));
   const handleToday = () => setSelectedDate(getTodayDateString());
 
-  const handleCancelAppointment = async (appointmentId: string) => {
-    if (!window.confirm('Tem certeza de que deseja cancelar esta reserva?')) {
+  const handleConfirmCancel = async () => {
+    if (isCancelling || !appointmentToCancel) {
       return;
     }
 
     setIsCancelling(true);
     setErrorMessage(null);
     try {
-      const updated = await appointmentsApi.cancel(appointmentId);
+      const updated = await appointmentsApi.cancel(appointmentToCancel.id);
       setAppointments((prev) => prev.map((apt) => (apt.id === updated.id ? updated : apt)));
       setSuccessMessage('Reserva cancelada com sucesso!');
+      setAppointmentToCancel(null);
     } catch (err: unknown) {
       const error = err as { message?: string };
       setErrorMessage(error.message || 'Erro ao cancelar reserva.');
+      setAppointmentToCancel(null);
     } finally {
       setIsCancelling(false);
     }
@@ -470,8 +474,8 @@ export const AgendaPage: React.FC = () => {
                           type="button"
                           variant="danger"
                           className="w-full flex items-center justify-center gap-2"
-                          onClick={() => handleCancelAppointment(selectedAppointment.id)}
-                          isLoading={isCancelling}
+                          onClick={() => setAppointmentToCancel(selectedAppointment)}
+                          disabled={isCancelling}
                         >
                           <CloseIcon size={18} />
                           <span>Cancelar Agendamento</span>
@@ -499,6 +503,20 @@ export const AgendaPage: React.FC = () => {
         professionals={professionals}
         services={services}
         onAppointmentCreated={handleAppointmentCreated}
+      />
+
+      {/* Modal de Confirmação de Cancelamento */}
+      <CancelAppointmentModal
+        isOpen={Boolean(appointmentToCancel)}
+        onClose={() => setAppointmentToCancel(null)}
+        onConfirm={handleConfirmCancel}
+        appointment={appointmentToCancel}
+        customer={appointmentToCancel ? customerMap.get(appointmentToCancel.customerId) : undefined}
+        professional={
+          appointmentToCancel ? professionalMap.get(appointmentToCancel.professionalId) : undefined
+        }
+        service={appointmentToCancel ? serviceMap.get(appointmentToCancel.serviceId) : undefined}
+        isCancelling={isCancelling}
       />
     </div>
   );

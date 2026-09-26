@@ -528,6 +528,56 @@ select.input-field {
   padding-top: 0.5rem;
 }
 
+/* Cancel Appointment Modal */
+.cancel-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cancel-modal-description {
+  font-size: 0.9375rem;
+  color: var(--color-ink-secondary);
+  line-height: 1.5;
+}
+
+.cancel-modal-summary {
+  background-color: var(--color-surface-container);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cancel-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.cancel-summary-label {
+  color: var(--color-ink-muted);
+  font-weight: 500;
+}
+
+.cancel-summary-value {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.cancel-modal-warning {
+  font-size: 0.8125rem;
+  color: #b91c1c;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  line-height: 1.45;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
