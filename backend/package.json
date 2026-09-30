@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "lint": "eslint .",
     "test": "vitest run",
-    "db:generate": "prisma generate",
+    "db:generate": "prisma generate && prisma generate --schema prisma/accounts/schema.prisma && prisma generate --schema prisma/tenant/schema.prisma",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy"
   },
