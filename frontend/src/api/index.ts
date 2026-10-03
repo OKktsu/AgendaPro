@@ -150,10 +150,17 @@ export const customersApi = {
    Disponibilidade e Reservas (Appointments)
    ========================================================================== */
 export const appointmentsApi = {
-  async list(filters?: { professionalId?: string; customerId?: string }): Promise<Appointment[]> {
+  async list(filters?: {
+    professionalId?: string;
+    customerId?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<Appointment[]> {
     const params = new URLSearchParams();
     if (filters?.professionalId) params.set('professionalId', filters.professionalId);
     if (filters?.customerId) params.set('customerId', filters.customerId);
+    if (filters?.startDate) params.set('startDate', filters.startDate);
+    if (filters?.endDate) params.set('endDate', filters.endDate);
 
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await apiFetch<{ appointments: Appointment[] }>(`/appointments${query}`);
