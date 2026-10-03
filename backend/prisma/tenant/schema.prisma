@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../../../node_modules/@agendapro/tenant-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("TENANT_DATABASE_URL")
+}
+
+// Modelo técnico inicial. O domínio (organizações, usuários e reservas) entra nas próximas entregas.
+model SystemSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum UserRole {
+  OWNER
+  STAFF
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+model Organization {
+  id            String         @id @default(uuid()) @db.Uuid
+  name          String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  users         UserProfile[]
+  services      Service[]
+  professionals Professional[]
+  customers     Customer[]
+  appointments  Appointment[]
+}
+
+model UserProfile {
+  id String @id @db.Uuid
+  accountId String @unique @db.Uuid
+  name String
+  organizationId String @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Service {
+  id              String                @id @default(uuid()) @db.Uuid
+  organizationId  String                @db.Uuid
+  organization    Organization          @relation(fields: [organizationId], references: [id])
+  name            String
+  durationMinutes Int
+  priceInCents    Int
+  active          Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  professionals   ProfessionalService[]
+  appointments    Appointment[]
+}
+
+model Professional {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizationId String                @db.Uuid
+  organization   Organization          @relation(fields: [organizationId], references: [id])
+  name           String
+  active         Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  services       ProfessionalService[]
+  workSchedules  ProfessionalWorkSchedule[]
+  appointments   Appointment[]
+}
+
+model ProfessionalService {
+  professionalId String       @db.Uuid
+  serviceId      String       @db.Uuid
+  createdAt      DateTime     @default(now())
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  service        Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([professionalId, serviceId])
+}
+
+model ProfessionalWorkSchedule {
+  id             String       @id @default(uuid()) @db.Uuid
+  professionalId String       @db.Uuid
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  weekday        Weekday
+  startTime      String
+  endTime        String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([professionalId, weekday])
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+model Customer {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  name           String
+  phone          String
+  email          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  appointments   Appointment[]
+
+  @@index([organizationId])
+}
+
+model Appointment {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  customerId     String            @db.Uuid
+  customer       Customer          @relation(fields: [customerId], references: [id])
+  professionalId String            @db.Uuid
+  professional   Professional      @relation(fields: [professionalId], references: [id])
+  serviceId      String            @db.Uuid
+  service        Service           @relation(fields: [serviceId], references: [id])
+  startsAt       DateTime
+  endsAt         DateTime
+  status         AppointmentStatus @default(SCHEDULED)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([organizationId])
+  @@index([professionalId, startsAt])
+  @@index([customerId])
+}
+
+

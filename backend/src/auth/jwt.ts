@@ -8,11 +8,7 @@ export type AuthenticatedUser = {
   organizationId: string;
 };
 
-export type TenantContext = {
-  userId: string;
-  organizationId: string;
-  role: 'OWNER' | 'STAFF';
-};
+export type { TenantContext } from '../tenant/context.js';
 
 export type JwtPayload = AuthenticatedUser & {
   sub?: string;

@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../../node_modules/@agendapro/accounts-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("ACCOUNTS_DATABASE_URL")
+}
+
+enum TenantStatus {
+  PROVISIONING
+  ACTIVE
+  FAILED
+  SUSPENDED
+}
+
+enum AccountRole {
+  OWNER
+  STAFF
+}
+
+model TenantDirectory {
+  id          String       @id @db.Uuid
+  databaseKey String       @unique
+  status      TenantStatus @default(PROVISIONING)
+  accounts    Account[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Account {
+  id           String          @id @db.Uuid
+  email        String          @unique
+  passwordHash String
+  role         AccountRole     @default(STAFF)
+  tenantId     String          @db.Uuid
+  tenant       TenantDirectory @relation(fields: [tenantId], references: [id])
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([tenantId])
+}

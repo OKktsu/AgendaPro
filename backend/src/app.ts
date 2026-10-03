@@ -1,5 +1,6 @@
 import cors from '@fastify/cors';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
+import { sharedTenantDatabaseResolver, type TenantDatabaseResolver } from './tenant/database.js';
 
 import {
   EmailAlreadyRegisteredError,
@@ -69,8 +70,9 @@ import {
 } from './appointment/appointment.js';
 
 type AppDependencies = {
+  tenantDatabaseResolver?: TenantDatabaseResolver;
   registerOrganizationOwner?: typeof registerOrganizationOwner;
-  loginUser?: typeof loginUser;
+  loginUser?: (input: Parameters<typeof loginUser>[0], secret: string) => ReturnType<typeof loginUser>;
   jwtSecret?: string;
   catalogDatabase?: CatalogDatabase;
   createService?: typeof createService;
@@ -96,6 +98,9 @@ type AppDependencies = {
 
 export function buildApp(dependencies: AppDependencies = {}) {
   const app = Fastify({ logger: true });
+  const tenantDatabases = dependencies.tenantDatabaseResolver ?? sharedTenantDatabaseResolver;
+  const resolveDatabase = (request: FastifyRequest) =>
+    tenantDatabases.resolve(getTenantContext(request));
   const registerOwner = dependencies.registerOrganizationOwner ?? registerOrganizationOwner;
   const login = dependencies.loginUser ?? loginUser;
   const jwtSecret =
@@ -226,7 +231,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
     const service = await svcCreateService(
       parsedBody.data,
       tenantContext.organizationId,
-      catalogDb,
+      catalogDb ?? (await resolveDatabase(request)),
     );
 
     return reply.code(201).send({ service, ...service });
@@ -234,7 +239,10 @@ export function buildApp(dependencies: AppDependencies = {}) {
 
   app.get('/services', { preHandler: requireAuth }, async (request, reply) => {
     const tenantContext = getTenantContext(request);
-    const services = await svcListServices(tenantContext.organizationId, catalogDb);
+    const services = await svcListServices(
+      tenantContext.organizationId,
+      catalogDb ?? (await resolveDatabase(request)),
+    );
 
     return reply.code(200).send({ services });
   });
@@ -253,7 +261,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
     const professional = await svcCreateProfessional(
       parsedBody.data,
       tenantContext.organizationId,
-      catalogDb,
+      catalogDb ?? (await resolveDatabase(request)),
     );
 
     return reply.code(201).send({ professional, ...professional });
@@ -261,7 +269,10 @@ export function buildApp(dependencies: AppDependencies = {}) {
 
   app.get('/professionals', { preHandler: requireAuth }, async (request, reply) => {
     const tenantContext = getTenantContext(request);
-    const professionals = await svcListProfessionals(tenantContext.organizationId, catalogDb);
+    const professionals = await svcListProfessionals(
+      tenantContext.organizationId,
+      catalogDb ?? (await resolveDatabase(request)),
+    );
 
     return reply.code(200).send({ professionals });
   });
@@ -286,7 +297,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
           parsedParams.data.professionalId,
           parsedParams.data.serviceId,
           tenantContext.organizationId,
-          catalogDb,
+          catalogDb ?? (await resolveDatabase(request)),
         );
 
         return reply.code(201).send({
@@ -334,7 +345,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
           parsedBody.data,
           parsedParams.data.professionalId,
           tenantContext.organizationId,
-          workScheduleDb,
+          workScheduleDb ?? (await resolveDatabase(request)),
         );
 
         return reply.code(201).send({ schedule, ...schedule });
@@ -371,7 +382,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
         const schedules = await svcListWorkSchedules(
           parsedParams.data.professionalId,
           tenantContext.organizationId,
-          workScheduleDb,
+          workScheduleDb ?? (await resolveDatabase(request)),
         );
 
         return reply.code(200).send({ schedules, workSchedules: schedules });
@@ -401,7 +412,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
       await svcDeleteWorkSchedule(
         parsedParams.data.id,
         tenantContext.organizationId,
-        workScheduleDb,
+        workScheduleDb ?? (await resolveDatabase(request)),
       );
 
       return reply.code(200).send({
@@ -433,7 +444,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
       const availability = await svcGetAvailability(
         parsedQuery.data,
         tenantContext.organizationId,
-        availabilityDb,
+        availabilityDb ?? (await resolveDatabase(request)),
       );
 
       return reply.code(200).send(availability);
@@ -467,7 +478,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
     const customer = await svcCreateCustomer(
       parsedBody.data,
       tenantContext.organizationId,
-      customerDb,
+      customerDb ?? (await resolveDatabase(request)),
     );
 
     return reply.code(201).send({ customer, ...customer });
@@ -488,7 +499,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
     const customers = await svcListCustomers(
       tenantContext.organizationId,
       searchTerm ? { search: searchTerm } : undefined,
-      customerDb,
+      customerDb ?? (await resolveDatabase(request)),
     );
 
     return reply.code(200).send({ customers });
@@ -520,7 +531,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
         parsedParams.data.id,
         parsedBody.data,
         tenantContext.organizationId,
-        customerDb,
+        customerDb ?? (await resolveDatabase(request)),
       );
 
       return reply.code(200).send({
@@ -553,7 +564,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
       const appointment = await svcCreateAppointment(
         parsedBody.data,
         tenantContext.organizationId,
-        appointmentDb,
+        appointmentDb ?? (await resolveDatabase(request)),
       );
 
       return reply.code(201).send({ appointment, ...appointment });
@@ -595,7 +606,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
     const appointments = await svcListAppointments(
       tenantContext.organizationId,
       parsedQuery.data,
-      appointmentDb,
+      appointmentDb ?? (await resolveDatabase(request)),
     );
 
     return reply.code(200).send({ appointments });
@@ -617,7 +628,7 @@ export function buildApp(dependencies: AppDependencies = {}) {
       const appointment = await svcCancelAppointment(
         parsedParams.data.id,
         tenantContext.organizationId,
-        appointmentDb,
+        appointmentDb ?? (await resolveDatabase(request)),
       );
 
       return reply.code(200).send({
