@@ -138,7 +138,10 @@ export function buildApp(dependencies: AppDependencies = {}) {
   const svcCancelAppointment = dependencies.cancelAppointment ?? cancelAppointment;
   const svcListAppointments = dependencies.listAppointments ?? listAppointments;
 
-  app.register(cors, { origin: true });
+  app.register(cors, {
+    origin: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
 
   app.get('/health', async () => ({
     status: 'ok',
