@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
 import { signJwt, type AuthenticatedUser } from '../auth/jwt.js';
-import { AppointmentConflictError } from './appointment.js';
+import { AppointmentConflictError, AppointmentNotFoundError } from './appointment.js';
 
 const jwtSecret = 'jwt-secret-test-appointment-routes';
 const organizationA = '11111111-1111-4111-8111-111111111111';
@@ -239,5 +239,49 @@ describe('Rotas de Clientes e Reservas', () => {
 
     expect(response.statusCode).toBe(400);
     expect(wasCalled).toBe(false);
+  });
+
+  it('retorna 404 ao tentar cancelar reserva de outra organização ou inexistente', async () => {
+    const foreignAppointmentId = '99999999-9999-4999-8999-999999999999';
+    let receivedOrgId: string | undefined;
+
+    const app = createApp({
+      cancelAppointment: async (_id, organizationId) => {
+        receivedOrgId = organizationId;
+        throw new AppointmentNotFoundError('Reserva não encontrada na organização.');
+      },
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/appointments/${foreignAppointmentId}/cancel`,
+      headers: auth(ownerA),
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(receivedOrgId).toBe(organizationA);
+    expect(response.json().message).toBe('Reserva não encontrada na organização.');
+  });
+
+  it('ignora organizationId falso enviado no body ou query e usa exclusivamente o JWT', async () => {
+    let capturedOrgId: string | undefined;
+    const apt = makeAppointment(organizationA);
+
+    const app = createApp({
+      cancelAppointment: async (_id, organizationId) => {
+        capturedOrgId = organizationId;
+        return { ...apt, status: 'CANCELLED' as const };
+      },
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/appointments/${apt.id}/cancel?organizationId=${organizationB}`,
+      headers: auth(ownerA),
+      payload: { organizationId: organizationB },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedOrgId).toBe(organizationA);
   });
 });
