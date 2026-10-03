@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { createServer } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,27 @@ function findAvailablePort() {
   });
 }
 
+async function waitForPort(host, port, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ready = await new Promise((resolve) => {
+      const socket = createConnection({ host, port });
+      socket.once('connect', () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once('error', () => resolve(false));
+      socket.setTimeout(1000, () => {
+        socket.destroy();
+        resolve(false);
+      });
+    });
+    if (ready) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`PostgreSQL não aceitou conexões em ${host}:${port} após ${timeoutMs}ms.`);
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd ?? repositoryRoot,
@@ -58,6 +79,7 @@ try {
   exitCode = run('docker', [...compose, 'up', '-d', '--wait'], { env: testEnvironment });
 
   if (exitCode === 0) {
+    await waitForPort(testEnvironment.MULTIBASE_PG_HOST, port);
     exitCode = run(process.execPath, [path.join(scriptDirectory, 'prepare-multibase.mjs')], {
       env: testEnvironment,
     });
