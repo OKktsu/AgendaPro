@@ -20,6 +20,29 @@ describe('GET /health', () => {
   });
 });
 
+describe('CORS preflight', () => {
+  it('allows PATCH requests from the local frontend', async () => {
+    const app = buildApp();
+
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/appointments/4e0d9057-4648-44a2-8489-3c22098d3a93/cancel',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'PATCH',
+        'access-control-request-headers': 'authorization',
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    expect(response.headers['access-control-allow-methods']).toContain('PATCH');
+    expect(response.headers['access-control-allow-headers']).toContain('authorization');
+
+    await app.close();
+  });
+});
+
 describe('POST /auth/register', () => {
   const apps = new Set<ReturnType<typeof buildApp>>();
 
