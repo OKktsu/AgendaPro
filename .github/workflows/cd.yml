@@ -1,4 +1,4 @@
-name: CD
+name: Frontend build
 
 on:
   pull_request:
@@ -8,16 +8,10 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: github-pages
-  cancel-in-progress: false
 
 jobs:
-  build-delivery:
-    name: Build delivery
+  build-frontend:
+    name: Build frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,18 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w @agendapro/frontend
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: frontend-dist
           path: frontend/dist
-
-  deploy:
-    name: Deploy to GitHub Pages
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build-delivery
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
