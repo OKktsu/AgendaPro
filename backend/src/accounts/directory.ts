@@ -1,4 +1,4 @@
-import type { PrismaClient } from '.prisma/accounts/index.js';
+import type { PrismaClient } from '@agendapro/accounts-client';
 import type { TenantDatabaseDirectory } from '../tenant/dedicated-database.js';
 
 export function accountsDirectory(accounts: PrismaClient): TenantDatabaseDirectory {

@@ -3,10 +3,12 @@ import type { CustomerDatabase } from '../appointment/customer.js';
 import type { AppointmentDatabase } from '../appointment/appointment.js';
 import type { WorkScheduleDatabase } from '../schedule/work-schedule.js';
 import type { AvailabilityDatabase } from '../schedule/availability.js';
+import type { PrismaClient } from '@prisma/client';
 import { prisma } from '../database/prisma.js';
 import type { TenantContext } from './context.js';
 
-export type TenantDatabase = CatalogDatabase &
+export type TenantDatabase = Pick<PrismaClient, '$queryRaw'> &
+  CatalogDatabase &
   CustomerDatabase &
   AppointmentDatabase &
   WorkScheduleDatabase &

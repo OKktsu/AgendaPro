@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client-js"
-  output = "../../../node_modules/.prisma/tenant"
+  output = "../../../node_modules/@agendapro/tenant-client"
 }
 
 datasource db {
@@ -142,6 +142,5 @@ model Appointment {
   @@index([professionalId, startsAt])
   @@index([customerId])
 }
-
 
 

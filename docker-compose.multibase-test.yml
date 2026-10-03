@@ -1,0 +1,16 @@
+services:
+  multibase-test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: lab_admin
+      POSTGRES_PASSWORD: lab_admin_only
+      POSTGRES_DB: lab_admin
+    ports:
+      - '127.0.0.1:${MULTIBASE_PG_PORT:-55433}:5432'
+    volumes:
+      - ./backend/test-support/multibase-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lab_admin -d lab_admin']
+      interval: 2s
+      timeout: 5s
+      retries: 20

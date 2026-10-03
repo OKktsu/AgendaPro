@@ -9,6 +9,9 @@
     "start": "node dist/server.js",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:integration": "node test-support/run-multibase-tests.mjs",
+    "db:lab:up": "docker compose -f ../docker-compose.multibase-test.yml -p agendapro-multibase-lab up -d",
+    "db:lab:down": "docker compose -f ../docker-compose.multibase-test.yml -p agendapro-multibase-lab down",
     "db:generate": "prisma generate && prisma generate --schema prisma/accounts/schema.prisma && prisma generate --schema prisma/tenant/schema.prisma",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy"

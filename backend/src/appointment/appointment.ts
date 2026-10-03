@@ -11,6 +11,7 @@ import type {
 import { z } from 'zod';
 
 import { prisma } from '../database/prisma.js';
+import { retryTransaction } from '../database/retry-transaction.js';
 import { SCHEDULE_DEFAULT_TIMEZONE, timeToMinutes } from '../schedule/availability.js';
 import { CustomerNotFoundError } from './customer.js';
 
@@ -287,35 +288,37 @@ export async function createAppointment(
     : (fn: (tx: AppointmentDatabase) => Promise<Appointment>) => fn(db);
 
   try {
-    return await executeTx(async (tx: AppointmentDatabase) => {
-      // Verificação em nível de aplicação (fast-path)
-      const existingConflict = await tx.appointment.findFirst({
-        where: {
-          professionalId: input.professionalId,
-          status: 'SCHEDULED',
-          startsAt: { lt: endsAt },
-          endsAt: { gt: startsAt },
-        },
-      });
+    return await retryTransaction(() =>
+      executeTx(async (tx: AppointmentDatabase) => {
+        // Verificação em nível de aplicação (fast-path)
+        const existingConflict = await tx.appointment.findFirst({
+          where: {
+            professionalId: input.professionalId,
+            status: 'SCHEDULED',
+            startsAt: { lt: endsAt },
+            endsAt: { gt: startsAt },
+          },
+        });
 
-      if (existingConflict) {
-        throw new AppointmentConflictError(
-          'Conflito de horário: já existe uma reserva agendada para este profissional no intervalo selecionado.',
-        );
-      }
+        if (existingConflict) {
+          throw new AppointmentConflictError(
+            'Conflito de horário: já existe uma reserva agendada para este profissional no intervalo selecionado.',
+          );
+        }
 
-      return await tx.appointment.create({
-        data: {
-          organizationId,
-          customerId: input.customerId,
-          professionalId: input.professionalId,
-          serviceId: input.serviceId,
-          startsAt,
-          endsAt,
-          status: 'SCHEDULED',
-        },
-      });
-    });
+        return await tx.appointment.create({
+          data: {
+            organizationId,
+            customerId: input.customerId,
+            professionalId: input.professionalId,
+            serviceId: input.serviceId,
+            startsAt,
+            endsAt,
+            status: 'SCHEDULED',
+          },
+        });
+      }),
+    );
   } catch (error: unknown) {
     const err = error as {
       code?: string;

@@ -72,7 +72,7 @@ import {
 type AppDependencies = {
   tenantDatabaseResolver?: TenantDatabaseResolver;
   registerOrganizationOwner?: typeof registerOrganizationOwner;
-  loginUser?: typeof loginUser;
+  loginUser?: (input: Parameters<typeof loginUser>[0], secret: string) => ReturnType<typeof loginUser>;
   jwtSecret?: string;
   catalogDatabase?: CatalogDatabase;
   createService?: typeof createService;
