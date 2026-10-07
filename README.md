@@ -97,6 +97,19 @@ gh api --method PUT repos/OKktsu/AgendaPro/branches/main/protection --input .git
 Os workflows de frontend geram apenas um artefato de build; o merge não publica
 a aplicação no GitHub Pages.
 
+O CI marca as PRs elegíveis com `discord-pending`. O workflow de alertas observa
+o término do CI e envia a mensagem somente para PRs já integradas em `main`.
+Depois de receber sucesso do Discord, troca a marca por `discord-sent`.
+Execuções são serializadas para evitar envios concorrentes. A verificação a cada
+15 minutos recupera avisos que ficaram pendentes por atraso do merge ou falha no
+envio; o agendamento do GitHub pode sofrer atrasos. Também é possível executar
+manualmente o workflow `Alerta no Discord` para processar avisos pendentes.
+Os merges manuais continuam sendo detectados por `push`.
+
+As labels `discord-pending` e `discord-sent` devem existir no repositório.
+O webhook permanece no secret `DISCORD_WEBHOOK_URL`; não são necessários
+tokens pessoais ou mudanças nas credenciais do Discord.
+
 ## Autenticação e Contexto de Organização
 
 As rotas protegidas da API identificam o usuário autenticado, sua organização e seu papel (`role`) exclusivamente a partir do token JWT validado.
