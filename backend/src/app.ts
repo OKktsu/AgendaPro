@@ -1,5 +1,7 @@
 import cors from '@fastify/cors';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
+import { TenantSelectionRequiredError, type createAccountsAuth } from './accounts/auth.js';
+import { selectOrganizationSchema } from './accounts/selection.js';
 import { sharedTenantDatabaseResolver, type TenantDatabaseResolver } from './tenant/database.js';
 
 import {
@@ -80,6 +82,7 @@ import {
 } from './appointment/appointment.js';
 
 type AppDependencies = {
+  selectOrganization?: ReturnType<typeof createAccountsAuth>['selectOrganization'];
   authorizeTenantContext?: (context: TenantContext) => Promise<void>;
   tenantDatabaseResolver?: TenantDatabaseResolver;
   registerOrganizationOwner?: typeof registerOrganizationOwner;
@@ -183,6 +186,8 @@ export function buildApp(dependencies: AppDependencies = {}) {
 
       return reply.code(200).send(result);
     } catch (error) {
+      if (error instanceof TenantSelectionRequiredError)
+        return reply.code(200).send(error.selection);
       if (error instanceof InvalidCredentialsError) {
         return reply.code(401).send({ message: error.message });
       }
@@ -206,6 +211,8 @@ export function buildApp(dependencies: AppDependencies = {}) {
       const result = await loginWithGoogle(identity, jwtSecret);
       return reply.code(200).send(result);
     } catch (error) {
+      if (error instanceof TenantSelectionRequiredError)
+        return reply.code(200).send(error.selection);
       if (error instanceof GoogleRegistrationRequiredError) {
         return reply.code(200).send({
           status: 'registration_required',
@@ -235,6 +242,20 @@ export function buildApp(dependencies: AppDependencies = {}) {
         });
       }
 
+      throw error;
+    }
+  });
+
+  app.post('/auth/select-organization', async (request, reply) => {
+    const parsed = selectOrganizationSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ message: 'Seleção de empresa inválida.' });
+    if (!dependencies.selectOrganization)
+      return reply.code(404).send({ message: 'Seleção de empresa indisponível neste modo.' });
+    try {
+      return reply.code(200).send(await dependencies.selectOrganization(parsed.data, jwtSecret));
+    } catch (error) {
+      if (error instanceof InvalidCredentialsError)
+        return reply.code(401).send({ message: 'Seleção inválida ou expirada. Entre novamente.' });
       throw error;
     }
   });
