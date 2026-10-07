@@ -20,25 +20,40 @@ enum AccountRole {
   STAFF
 }
 
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+}
+
 model TenantDirectory {
   id          String       @id @db.Uuid
   databaseKey String       @unique
   status      TenantStatus @default(PROVISIONING)
-  accounts    Account[]
+  memberships Membership[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 }
 
 model Account {
-  id            String          @id @db.Uuid
-  email         String          @unique
+  id            String       @id @db.Uuid
+  email         String       @unique
   passwordHash  String
-  googleSubject String?         @unique
-  role          AccountRole     @default(STAFF)
-  tenantId      String          @db.Uuid
-  tenant        TenantDirectory @relation(fields: [tenantId], references: [id])
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  googleSubject String?      @unique
+  memberships   Membership[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
 
+model Membership {
+  accountId String           @db.Uuid
+  tenantId  String           @db.Uuid
+  role      AccountRole      @default(STAFF)
+  status    MembershipStatus @default(ACTIVE)
+  account   Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tenant    TenantDirectory  @relation(fields: [tenantId], references: [id])
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@id([accountId, tenantId])
   @@index([tenantId])
 }

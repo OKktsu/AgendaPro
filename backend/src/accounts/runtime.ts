@@ -3,6 +3,7 @@ import { DedicatedTenantDatabaseResolver } from '../tenant/dedicated-database.js
 import { accountsDirectory } from './directory.js';
 import { createAccountsAuth } from './auth.js';
 import { z } from 'zod';
+import { createMembershipAuthorizer } from './membership.js';
 
 export function createAccountsRuntime(accountsUrl: string, databaseUrlsJson: string) {
   const databaseUrls = z
@@ -23,6 +24,7 @@ export function createAccountsRuntime(accountsUrl: string, databaseUrlsJson: str
   const auth = createAccountsAuth(accounts, resolver, databaseUrls);
   return {
     dependencies: {
+      authorizeTenantContext: createMembershipAuthorizer(accounts),
       tenantDatabaseResolver: resolver,
       loginUser: auth.login,
       loginWithGoogle: auth.loginWithGoogle,

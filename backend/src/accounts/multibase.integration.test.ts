@@ -5,6 +5,9 @@ import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { createAccountsRuntime } from './runtime.js';
 import { InvalidGoogleCredentialError } from '../auth/google.js';
+import { readFile } from 'node:fs/promises';
+import { TenantSelectionRequiredError } from './auth.js';
+import { signJwt } from '../auth/jwt.js';
 
 const host = process.env.MULTIBASE_PG_HOST ?? '127.0.0.1';
 const port = Number(process.env.MULTIBASE_PG_PORT ?? 55433);
@@ -75,6 +78,161 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
     });
     const headers = (index: number) => ({ authorization: `Bearer ${identities[index].token}` });
 
+    it('migra vínculos legados sem alterar credenciais e identificadores', async () => {
+      const marker = new Error('rollback do laboratório');
+      await expect(
+        accounts.$transaction(
+          async (tx) => {
+            const schema = `migration_${randomUUID().replaceAll('-', '')}`;
+            await tx.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
+            await tx.$executeRawUnsafe(`SET LOCAL search_path TO "${schema}"`);
+            for (const migration of [
+              '20260930000000_accounts',
+              '20261003090000_add_google_subject',
+            ]) {
+              const sql = await readFile(
+                new URL(
+                  `../../prisma/accounts/migrations/${migration}/migration.sql`,
+                  import.meta.url,
+                ),
+                'utf8',
+              );
+              for (const statement of sql
+                .split(';')
+                .filter((part) => part.trim() && !/^(BEGIN|COMMIT)$/i.test(part.trim())))
+                await tx.$executeRawUnsafe(statement);
+            }
+            const accountId = randomUUID();
+            const tenantId = randomUUID();
+            await tx.$executeRaw`INSERT INTO "TenantDirectory" ("id", "databaseKey", "status", "updatedAt") VALUES (${tenantId}::uuid, 'OLD', 'ACTIVE', CURRENT_TIMESTAMP)`;
+            await tx.$executeRaw`INSERT INTO "Account" ("id", "email", "passwordHash", "googleSubject", "role", "tenantId", "updatedAt") VALUES (${accountId}::uuid, 'old@example.test', 'preserved-hash', 'preserved-google', 'OWNER', ${tenantId}::uuid, CURRENT_TIMESTAMP)`;
+            const sql = await readFile(
+              new URL(
+                '../../prisma/accounts/migrations/20261007000000_account_memberships/migration.sql',
+                import.meta.url,
+              ),
+              'utf8',
+            );
+            // A transação do teste já envolve toda a migration e será revertida ao final.
+            for (const statement of sql
+              .split(';')
+              .filter((part) => part.trim() && !/^(BEGIN|COMMIT)$/i.test(part.trim())))
+              await tx.$executeRawUnsafe(statement);
+            const rows = await tx.$queryRaw<
+              Array<{
+                id: string;
+                passwordHash: string;
+                googleSubject: string;
+                tenantId: string;
+                role: string;
+                status: string;
+              }>
+            >`SELECT a."id", a."passwordHash", a."googleSubject", m."tenantId", m."role", m."status" FROM "Account" a JOIN "Membership" m ON m."accountId" = a."id"`;
+            expect(rows).toEqual([
+              {
+                id: accountId,
+                passwordHash: 'preserved-hash',
+                googleSubject: 'preserved-google',
+                tenantId,
+                role: 'OWNER',
+                status: 'ACTIVE',
+              },
+            ]);
+            throw marker;
+          },
+          { timeout: 15000 },
+        ),
+      ).rejects.toBe(marker);
+    });
+
+    it('uma identidade acessa duas empresas com papéis distintos e revogação imediata', async () => {
+      const accountId = identities[0].user.id;
+      const tenantId = identities[1].user.organizationId;
+      await accounts.membership.create({ data: { accountId, tenantId, role: 'STAFF' } });
+      await clients[1].userProfile.create({
+        data: { id: accountId, accountId, organizationId: tenantId, name: 'Perfil na empresa B' },
+      });
+      try {
+        await expect(
+          accounts.membership.create({ data: { accountId, tenantId, role: 'OWNER' } }),
+        ).rejects.toMatchObject({ code: 'P2002' });
+        const input = { email: 'lab-a@example.test', password };
+        await expect(
+          runtime.dependencies.loginUser({ ...input, password: 'wrong' }, 'lab-jwt-only', tenantId),
+        ).rejects.toThrow();
+        await expect(runtime.dependencies.loginUser(input, 'lab-jwt-only')).rejects.toBeInstanceOf(
+          TenantSelectionRequiredError,
+        );
+        await expect(
+          runtime.dependencies.loginUser(input, 'lab-jwt-only', randomUUID()),
+        ).rejects.toThrow();
+        const a = await runtime.dependencies.loginUser(
+          input,
+          'lab-jwt-only',
+          identities[0].user.organizationId,
+        );
+        const b = await runtime.dependencies.loginUser(input, 'lab-jwt-only', tenantId);
+        const googleAccount = await accounts.account.findUniqueOrThrow({
+          where: { id: identities[1].user.id },
+        });
+        const googleSession = await runtime.dependencies.loginWithGoogle(
+          { subject: googleAccount.googleSubject!, email: googleAccount.email },
+          'lab-jwt-only',
+          tenantId,
+        );
+        expect(googleSession.user.organizationId).toBe(tenantId);
+        expect(a.user.role).toBe('OWNER');
+        expect(b.user).toMatchObject({
+          id: accountId,
+          organizationId: tenantId,
+          role: 'STAFF',
+          name: 'Perfil na empresa B',
+        });
+        const auth = { authorization: `Bearer ${b.token}` };
+        expect(
+          (await app.inject({ method: 'GET', url: '/auth/me', headers: auth })).statusCode,
+        ).toBe(200);
+        expect(
+          (await app.inject({ method: 'GET', url: '/customers', headers: auth })).statusCode,
+        ).toBe(200);
+        expect(
+          (
+            await app.inject({
+              method: 'POST',
+              url: '/services',
+              headers: auth,
+              payload: { name: 'Não autorizado', durationMinutes: 30, price: 10 },
+            })
+          ).statusCode,
+        ).toBe(403);
+        const forgedRole = signJwt({ ...b.user, role: 'OWNER' }, 'lab-jwt-only');
+        expect(
+          (
+            await app.inject({
+              method: 'GET',
+              url: '/auth/me',
+              headers: { authorization: `Bearer ${forgedRole}` },
+            })
+          ).statusCode,
+        ).toBe(403);
+        await accounts.membership.update({
+          where: { accountId_tenantId: { accountId, tenantId } },
+          data: { status: 'SUSPENDED' },
+        });
+        expect(
+          (await app.inject({ method: 'GET', url: '/auth/me', headers: auth })).statusCode,
+        ).toBe(403);
+        expect(
+          (await app.inject({ method: 'GET', url: '/customers', headers: auth })).statusCode,
+        ).toBe(403);
+      } finally {
+        await clients[1].userProfile.delete({ where: { accountId } });
+        await accounts.membership.delete({
+          where: { accountId_tenantId: { accountId, tenantId } },
+        });
+      }
+    });
+
     it('cadastro Google persiste o vínculo e permite novo login no tenant correto', async () => {
       const account = await accounts.account.findUniqueOrThrow({
         where: { email: 'lab-b@example.test' },
@@ -96,7 +254,7 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
         headers: { authorization: `Bearer ${response.json().token}` },
       });
       expect(session.statusCode).toBe(200);
-      expect(session.json().user.organizationId).toBe(account.tenantId);
+      expect(session.json().user.organizationId).toBe(identities[1].user.organizationId);
     });
 
     it('vincula o Google em Accounts e mantém essa identidade fora da base do tenant', async () => {
@@ -114,7 +272,7 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
 
       expect(result.user).toMatchObject({
         id: account.id,
-        organizationId: account.tenantId,
+        organizationId: identities[0].user.organizationId,
         email: account.email,
         name: 'Empresa A',
       });

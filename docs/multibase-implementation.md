@@ -12,9 +12,19 @@
 
 ## Divisão de dados acordada
 
-Accounts contém Account (ID, e-mail, hash de senha, papel, tenantId) e TenantDirectory (ID, referência de conexão, estado técnico).
+Accounts contém Account (ID, e-mail, hash de senha, vínculo Google), Membership (accountId, tenantId, papel, estado) e TenantDirectory (ID, referência de conexão, estado técnico).
 O banco da empresa contém Organization, UserProfile, clientes, serviços, profissionais, expediente e reservas. Não criar CPF/RG sem requisito real de produto; esses campos foram exemplos de dados que deverão permanecer no tenant.
 UserProfile.accountId é referência lógica, sem foreign key entre bancos.
+
+## Etapa de vínculos por empresa
+
+- Uma identidade pode ter vários vínculos. A chave composta `(accountId, tenantId)` impede duplicidade, e o papel pertence ao vínculo, não à identidade.
+- A migration `20261007000000_account_memberships` copia os vínculos existentes antes de remover `Account.tenantId` e `Account.role`. IDs, hashes e vínculos Google são preservados. Aplicar em manutenção, com backup, antes de iniciar a versão nova do backend dedicado. Não executar versões antiga e nova simultaneamente.
+- O modo compartilhado permanece sem alteração. No modo dedicado, o middleware verifica vínculo ativo, papel atual e empresa ativa em cada requisição autenticada, incluindo `/auth/me`.
+- Login com uma única empresa mantém o contrato atual. Com várias empresas ativas, retorna 409 sem emitir token nem escolher uma empresa arbitrariamente. O seletor público e sua sessão intermediária entram na próxima etapa.
+- A seleção explícita existe somente na função interna de autenticação e exige senha válida ou identidade Google previamente verificada, além do vínculo ativo. Não há endpoint público para adicionar vínculos nesta etapa.
+- Perfis continuam nas respectivas bases empresariais. Suspensão ou mudança de papel invalida o acesso de tokens antigos; não são alteradas permissões por confiar apenas nas claims do token.
+- `npm run test:integration` valida backfill legado em schema transacional descartável e uma conta OWNER em A / STAFF em B, incluindo bloqueios e revogação. O healthcheck do laboratório espera TCP para não confundir o PostgreSQL temporário de inicialização com o servidor pronto.
 
 O identificador atual `organizationId` é mantido como identificador de tenant para preservar o contrato da API. Um banco distinto no mesmo servidor PostgreSQL não isola CPU, disco nem administradores; permissões por banco são necessárias.
 

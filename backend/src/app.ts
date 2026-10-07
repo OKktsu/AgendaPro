@@ -8,7 +8,7 @@ import {
   registerOrganizationOwner,
 } from './auth/register.js';
 import { InvalidCredentialsError, loginBodySchema, loginUser } from './auth/login.js';
-import { signJwt } from './auth/jwt.js';
+import { signJwt, type TenantContext } from './auth/jwt.js';
 import {
   GoogleAuthenticationUnavailableError,
   GoogleRegistrationRequiredError,
@@ -80,6 +80,7 @@ import {
 } from './appointment/appointment.js';
 
 type AppDependencies = {
+  authorizeTenantContext?: (context: TenantContext) => Promise<void>;
   tenantDatabaseResolver?: TenantDatabaseResolver;
   registerOrganizationOwner?: typeof registerOrganizationOwner;
   loginUser?: (
@@ -127,9 +128,9 @@ export function buildApp(dependencies: AppDependencies = {}) {
   const googleClientId = dependencies.googleClientId ?? process.env.GOOGLE_CLIENT_ID;
   const jwtSecret =
     dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'agendapro-dev-secret-change-in-production';
-  const authenticate = createAuthMiddleware(jwtSecret);
+  const authenticate = createAuthMiddleware(jwtSecret, dependencies.authorizeTenantContext);
   const requireAuth = authenticate;
-  const requireOwner = createRequireOwnerMiddleware(jwtSecret);
+  const requireOwner = createRequireOwnerMiddleware(jwtSecret, dependencies.authorizeTenantContext);
 
   const catalogDb = dependencies.catalogDatabase;
   const svcCreateService = dependencies.createService ?? createService;

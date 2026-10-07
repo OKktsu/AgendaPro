@@ -18,6 +18,7 @@ export function getTenantContext(request: FastifyRequest): TenantContext {
 
 export function createAuthMiddleware(
   jwtSecret = process.env.JWT_SECRET ?? 'agendapro-dev-secret-change-in-production',
+  authorizeTenantContext?: (context: TenantContext) => Promise<void>,
 ) {
   return async function authenticate(request: FastifyRequest, reply: FastifyReply) {
     const authHeader = request.headers.authorization;
@@ -49,14 +50,17 @@ export function createAuthMiddleware(
         message: 'Token de autenticação não fornecido ou inválido.',
       });
     }
+    if (authorizeTenantContext && request.tenantContext)
+      await authorizeTenantContext(request.tenantContext);
   };
 }
 
 export function createRequireRoleMiddleware(
   allowedRoles: Array<'OWNER' | 'STAFF'>,
   jwtSecret = process.env.JWT_SECRET ?? 'agendapro-dev-secret-change-in-production',
+  authorizeTenantContext?: (context: TenantContext) => Promise<void>,
 ) {
-  const authenticate = createAuthMiddleware(jwtSecret);
+  const authenticate = createAuthMiddleware(jwtSecret, authorizeTenantContext);
 
   return async function requireRole(request: FastifyRequest, reply: FastifyReply) {
     if (!request.tenantContext) {
@@ -76,8 +80,9 @@ export function createRequireRoleMiddleware(
 
 export function createRequireOwnerMiddleware(
   jwtSecret = process.env.JWT_SECRET ?? 'agendapro-dev-secret-change-in-production',
+  authorizeTenantContext?: (context: TenantContext) => Promise<void>,
 ) {
-  return createRequireRoleMiddleware(['OWNER'], jwtSecret);
+  return createRequireRoleMiddleware(['OWNER'], jwtSecret, authorizeTenantContext);
 }
 
 export const requireAuth = createAuthMiddleware;

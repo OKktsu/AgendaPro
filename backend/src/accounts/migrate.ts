@@ -69,8 +69,7 @@ export async function migrateOrganization(
         id: user.id,
         email: user.email,
         passwordHash: user.passwordHash,
-        tenantId: organizationId,
-        role: user.role,
+        googleSubject: user.googleSubject,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       };
@@ -78,6 +77,20 @@ export async function migrateOrganization(
       if (found && canonical(found) !== canonical(data))
         throw new Error('Conta de destino divergente.');
       if (!found) await tx.account.create({ data });
+      const membershipData = {
+        accountId: user.id,
+        tenantId: organizationId,
+        role: user.role,
+        status: 'ACTIVE' as const,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      };
+      const membership = await tx.membership.findUnique({
+        where: { accountId_tenantId: { accountId: user.id, tenantId: organizationId } },
+      });
+      if (membership && canonical(membership) !== canonical(membershipData))
+        throw new Error('Vínculo de destino divergente.');
+      if (!membership) await tx.membership.create({ data: membershipData });
     }
   });
   try {
