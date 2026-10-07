@@ -49,6 +49,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      issues: write
     steps:
       - name: Ativar merge após os checks obrigatórios
         env:
@@ -64,4 +65,5 @@ jobs:
             echo "A PR mudou desde esta execução; aguardando o CI da revisão atual."
             exit 0
           fi
+          gh pr edit "$PR_NUMBER" --add-label discord-pending
           gh pr merge "$PR_NUMBER" --auto --merge --match-head-commit "$HEAD_SHA"

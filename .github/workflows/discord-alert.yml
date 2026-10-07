@@ -3,20 +3,81 @@ name: Alerta no Discord
 on:
   push:
     branches: [main]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: '*/15 * * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: discord-merge-notifications
+  cancel-in-progress: false
 
 jobs:
   notify-discord:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
-      - name: Enviar alerta para o Discord
+      - name: Aguardar a conclusão do auto-merge
+        if: github.event_name == 'workflow_run'
+        run: sleep 30
+      - name: Enviar alertas dos merges pendentes
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          payload=$(jq -n \
-            --arg content "AgendaPro: alteracao enviada para main. Commit: ${GITHUB_SHA}. Autor: ${GITHUB_ACTOR}." \
-            '{content: $content}')
-          curl --fail --show-error --silent \
-            --header "Content-Type: application/json" \
-            --data "$payload" \
-            "$DISCORD_WEBHOOK_URL"
+          # Também preserva os avisos de merges feitos manualmente.
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            associated=$(gh api "repos/$GH_REPO/commits/$PUSH_SHA/pulls")
+            while read -r number; do
+              labels=$(gh pr view "$number" --json labels --jq '.labels[].name')
+              if ! grep -qx 'discord-sent' <<< "$labels"; then
+                gh pr edit "$number" --add-label discord-pending
+              fi
+            done < <(jq -r '.[] | select(.merged_at != null and .base.ref == "main") | .number' <<< "$associated")
+          fi
+
+          pending=$(gh pr list --state merged --base main --label discord-pending \
+            --limit 100 --json number,title,url,author,mergeCommit)
+          if [[ $(jq 'length' <<< "$pending") == 0 ]]; then
+            echo "Nenhum merge aguardando envio ao Discord."
+            exit 0
+          fi
+          if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
+            echo "Configure o secret DISCORD_WEBHOOK_URL para enviar os avisos."
+            exit 1
+          fi
+
+          while IFS= read -r pr; do
+            number=$(jq -r '.number' <<< "$pr")
+            labels=$(gh pr view "$number" --json labels --jq '.labels[].name')
+            if grep -qx 'discord-sent' <<< "$labels"; then
+              gh pr edit "$number" --remove-label discord-pending
+              continue
+            fi
+            title=$(jq -r '.title' <<< "$pr")
+            url=$(jq -r '.url' <<< "$pr")
+            author=$(jq -r '.author.login' <<< "$pr")
+            commit=$(jq -r '.mergeCommit.oid' <<< "$pr")
+            payload=$(jq -n \
+              --arg content "AgendaPro: PR #${number} integrada em main. ${title}. Autor: ${author}. Commit: ${commit}. ${url}" \
+              '{content: $content, allowed_mentions: {parse: []}}')
+            curl --fail --show-error --silent --max-time 30 \
+              --header "Content-Type: application/json" \
+              --data "$payload" --output /dev/null \
+              "$DISCORD_WEBHOOK_URL"
+            gh pr edit "$number" --remove-label discord-pending --add-label discord-sent
+            echo "Aviso da PR #${number} recebido pelo Discord."
+          done < <(jq -c '.[]' <<< "$pending")
