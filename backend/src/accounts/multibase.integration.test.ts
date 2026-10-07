@@ -220,6 +220,27 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
           name: 'Perfil na empresa B',
         });
         const auth = { authorization: `Bearer ${b.token}` };
+        expect((await app.inject({ method: 'GET', url: '/auth/organizations' })).statusCode).toBe(
+          401,
+        );
+        const switchList = await app.inject({
+          method: 'GET',
+          url: '/auth/organizations',
+          headers: auth,
+        });
+        expect(switchList.statusCode).toBe(200);
+        expect(switchList.json().organizations).toHaveLength(2);
+        const switched = await app.inject({
+          method: 'POST',
+          url: '/auth/select-organization',
+          payload: {
+            selectionToken: switchList.json().selectionToken,
+            organizationId: identities[0].user.organizationId,
+          },
+        });
+        expect(switched.statusCode).toBe(200);
+        expect(switched.json().user.role).toBe('OWNER');
+        expect(switched.json().canSwitchOrganization).toBe(true);
         expect(
           (await app.inject({ method: 'GET', url: '/auth/me', headers: auth })).statusCode,
         ).toBe(200);
@@ -251,6 +272,10 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
           data: { status: 'SUSPENDED' },
         });
         expect((await choose(tenantId)).statusCode).toBe(401);
+        expect(
+          (await app.inject({ method: 'GET', url: '/auth/organizations', headers: auth }))
+            .statusCode,
+        ).toBe(403);
         expect(
           (await app.inject({ method: 'GET', url: '/auth/me', headers: auth })).statusCode,
         ).toBe(403);

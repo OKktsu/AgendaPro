@@ -43,6 +43,7 @@ export function createAccountsAuth(
     account: { id: string; email: string },
     secret: string,
     tenantId?: string,
+    forceSelection = false,
   ) {
     const memberships = await accounts.membership.findMany({
       where: {
@@ -53,7 +54,7 @@ export function createAccountsAuth(
       },
     });
     if (!memberships.length) throw new InvalidCredentialsError();
-    if (memberships.length !== 1) {
+    if (memberships.length !== 1 || forceSelection) {
       const organizations: OrganizationSelection['organizations'] = [];
       for (const membership of memberships) {
         const db = await resolver.resolve({
@@ -93,7 +94,16 @@ export function createAccountsAuth(
       email: account.email,
       name: profiles[0].name,
     };
-    return { user, token: signJwt(user, secret) };
+    const organizations = await db.$queryRaw<
+      Array<{ id: string; name: string }>
+    >`SELECT "id", "name" FROM "Organization" WHERE "id" = ${membership.tenantId}::uuid`;
+    if (organizations.length !== 1) throw new InvalidCredentialsError();
+    return {
+      user,
+      token: signJwt(user, secret),
+      canSwitchOrganization: true,
+      organization: organizations[0],
+    };
   }
 
   async function login(input: z.infer<typeof loginBodySchema>, secret: string, tenantId?: string) {
@@ -277,5 +287,17 @@ export function createAccountsAuth(
     return session(account, secret, input.organizationId);
   }
 
-  return { login, loginWithGoogle, register, selectOrganization };
+  async function listOrganizations(accountId: string, secret: string) {
+    const account = await accounts.account.findUnique({ where: { id: accountId } });
+    if (!account) throw new InvalidCredentialsError();
+    try {
+      await session(account, secret, undefined, true);
+    } catch (error) {
+      if (error instanceof TenantSelectionRequiredError) return error.selection;
+      throw error;
+    }
+    throw new InvalidCredentialsError();
+  }
+
+  return { login, loginWithGoogle, register, selectOrganization, listOrganizations };
 }

@@ -83,6 +83,8 @@ import {
 
 type AppDependencies = {
   selectOrganization?: ReturnType<typeof createAccountsAuth>['selectOrganization'];
+  listOrganizations?: ReturnType<typeof createAccountsAuth>['listOrganizations'];
+  getCurrentOrganization?: (context: TenantContext) => Promise<{ id: string; name: string }>;
   authorizeTenantContext?: (context: TenantContext) => Promise<void>;
   tenantDatabaseResolver?: TenantDatabaseResolver;
   registerOrganizationOwner?: typeof registerOrganizationOwner;
@@ -261,7 +263,27 @@ export function buildApp(dependencies: AppDependencies = {}) {
   });
 
   app.get('/auth/me', { preHandler: authenticate }, async (request, reply) => {
-    return reply.code(200).send({ user: request.user });
+    return reply.code(200).send({
+      user: request.user,
+      ...(dependencies.getCurrentOrganization
+        ? { organization: await dependencies.getCurrentOrganization(getTenantContext(request)) }
+        : {}),
+      ...(dependencies.listOrganizations ? { canSwitchOrganization: true } : {}),
+    });
+  });
+
+  app.get('/auth/organizations', { preHandler: authenticate }, async (request, reply) => {
+    if (!dependencies.listOrganizations)
+      return reply.code(404).send({ message: 'Troca de empresa indisponível neste modo.' });
+    try {
+      return reply
+        .code(200)
+        .send(await dependencies.listOrganizations(getTenantContext(request).userId, jwtSecret));
+    } catch (error) {
+      if (error instanceof InvalidCredentialsError)
+        return reply.code(401).send({ message: 'Entre novamente para escolher uma empresa.' });
+      throw error;
+    }
   });
 
   app.get('/me', { preHandler: requireAuth }, async (request, reply) => {
@@ -307,13 +329,15 @@ export function buildApp(dependencies: AppDependencies = {}) {
         ? await registerOwner({ ...parsedBody.data, email: identity.email }, identity)
         : await registerOwner(parsedBody.data);
 
-      return reply
-        .code(201)
-        .send(
-          identity
-            ? { ...registration, token: signJwt(registration.user, jwtSecret) }
-            : registration,
-        );
+      return reply.code(201).send(
+        identity
+          ? {
+              ...registration,
+              token: signJwt(registration.user, jwtSecret),
+              ...(dependencies.listOrganizations ? { canSwitchOrganization: true } : {}),
+            }
+          : registration,
+      );
     } catch (error) {
       if (error instanceof GoogleAuthenticationUnavailableError) {
         return reply.code(503).send({ message: error.message });

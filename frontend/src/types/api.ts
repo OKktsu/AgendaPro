@@ -16,24 +16,38 @@ export interface Organization {
 }
 
 export interface AuthLoginResponse {
+  organization?: Organization;
+  canSwitchOrganization?: boolean;
   token: string;
   user: User;
 }
 
+export interface OrganizationSelection {
+  status: 'organization_selection_required';
+  selectionToken: string;
+  organizations: Array<{ id: string; name: string; role: UserRole }>;
+}
+
+export type PasswordLoginResponse = AuthLoginResponse | OrganizationSelection;
+
 export type GoogleLoginResponse =
   | AuthLoginResponse
+  | OrganizationSelection
   | {
       status: 'registration_required';
       profile: { email: string; name: string };
     };
 
 export interface AuthRegisterResponse {
+  canSwitchOrganization?: boolean;
   token?: string;
   organization: Organization;
   user: User;
 }
 
 export interface AuthMeResponse {
+  organization?: Organization;
+  canSwitchOrganization?: boolean;
   user: User;
 }
 
