@@ -1,5 +1,8 @@
 import { PrismaClient } from '@agendapro/accounts-client';
-import { DedicatedTenantDatabaseResolver } from '../tenant/dedicated-database.js';
+import {
+  DedicatedTenantDatabaseResolver,
+  TenantDatabaseUnavailableError,
+} from '../tenant/dedicated-database.js';
 import { accountsDirectory } from './directory.js';
 import { createAccountsAuth } from './auth.js';
 import { z } from 'zod';
@@ -29,6 +32,15 @@ export function createAccountsRuntime(accountsUrl: string, databaseUrlsJson: str
       loginUser: auth.login,
       loginWithGoogle: auth.loginWithGoogle,
       selectOrganization: auth.selectOrganization,
+      listOrganizations: auth.listOrganizations,
+      async getCurrentOrganization(context: import('../auth/jwt.js').TenantContext) {
+        const db = await resolver.resolve(context);
+        const organizations = await db.$queryRaw<
+          Array<{ id: string; name: string }>
+        >`SELECT "id", "name" FROM "Organization" WHERE "id" = ${context.organizationId}::uuid`;
+        if (organizations.length !== 1) throw new TenantDatabaseUnavailableError();
+        return organizations[0];
+      },
       registerOrganizationOwner: auth.register,
     },
     async close() {

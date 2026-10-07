@@ -2,6 +2,8 @@ import { apiFetch } from './client.js';
 import type {
   Appointment,
   AuthLoginResponse,
+  PasswordLoginResponse,
+  OrganizationSelection,
   GoogleLoginResponse,
   AuthMeResponse,
   AuthRegisterResponse,
@@ -25,10 +27,23 @@ export * from './client.js';
    Autenticação
    ========================================================================== */
 export const authApi = {
-  async login(credentials: { email: string; password: string }): Promise<AuthLoginResponse> {
-    return apiFetch<AuthLoginResponse>('/auth/login', {
+  async login(credentials: { email: string; password: string }): Promise<PasswordLoginResponse> {
+    return apiFetch<PasswordLoginResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
+    });
+  },
+
+  async listOrganizations(): Promise<OrganizationSelection> {
+    return apiFetch<OrganizationSelection>('/auth/organizations');
+  },
+  async selectOrganization(
+    selectionToken: string,
+    organizationId: string,
+  ): Promise<AuthLoginResponse> {
+    return apiFetch<AuthLoginResponse>('/auth/select-organization', {
+      method: 'POST',
+      body: JSON.stringify({ selectionToken, organizationId }),
     });
   },
 

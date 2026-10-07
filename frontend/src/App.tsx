@@ -8,9 +8,10 @@ import { AgendaPage } from './pages/agenda/AgendaPage.js';
 import { CustomersPage } from './pages/customers/CustomersPage.js';
 import { ServicesPage } from './pages/services/ServicesPage.js';
 import { TeamPage } from './pages/team/TeamPage.js';
+import { OrganizationSelectionPage } from './pages/auth/OrganizationSelectionPage.js';
 
 const MainRouter: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, selection } = useAuth();
   const [activeTab, setActiveTab] = useState<NavTab>('agenda');
 
   if (isLoading) {
@@ -24,6 +25,7 @@ const MainRouter: React.FC = () => {
     );
   }
 
+  if (selection) return <OrganizationSelectionPage />;
   if (!isAuthenticated) {
     return <AuthPage />;
   }
@@ -38,10 +40,15 @@ const MainRouter: React.FC = () => {
   );
 };
 
+const SessionRouter: React.FC = () => {
+  const { sessionVersion } = useAuth();
+  return <MainRouter key={sessionVersion} />;
+};
+
 export const App: React.FC = () => {
   return (
     <AuthProvider>
-      <MainRouter />
+      <SessionRouter />
     </AuthProvider>
   );
 };

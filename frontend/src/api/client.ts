@@ -1,6 +1,7 @@
 import type { ApiErrorResponse } from '../types/api.js';
 
 export const TOKEN_STORAGE_KEY = 'agendapro_jwt_token';
+let sessionGeneration = 0;
 
 export class ApiError extends Error {
   status: number;
@@ -31,6 +32,7 @@ export function getToken(): string | null {
 }
 
 export function setToken(token: string | null): void {
+  sessionGeneration++;
   try {
     if (token) {
       localStorage.setItem(TOKEN_STORAGE_KEY, token);
@@ -47,6 +49,7 @@ export function clearToken(): void {
 }
 
 export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const generation = sessionGeneration;
   const baseUrl = getApiBaseUrl();
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const url = `${baseUrl}${normalizedEndpoint}`;
@@ -71,6 +74,11 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   } catch {
     throw new ApiError('Não foi possível conectar à API. Verifique se o servidor está ativo.', 0);
   }
+  const ensureCurrentSession = () => {
+    if (generation !== sessionGeneration || token !== getToken())
+      throw new ApiError('A sessão mudou. A resposta anterior foi descartada.', 409);
+  };
+  ensureCurrentSession();
 
   // Se a resposta estiver vazia (204 No Content)
   if (response.status === 204) {
@@ -89,6 +97,7 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     data = await response.text();
   }
 
+  ensureCurrentSession();
   if (!response.ok) {
     const errorBody = (data && typeof data === 'object' ? data : {}) as Partial<ApiErrorResponse>;
     const message =

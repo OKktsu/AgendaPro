@@ -1,6 +1,8 @@
 import { createContext } from 'react';
 import type {
-  AuthLoginResponse,
+  PasswordLoginResponse,
+  OrganizationSelection,
+  Organization,
   AuthRegisterResponse,
   GoogleLoginResponse,
   User,
@@ -8,10 +10,17 @@ import type {
 
 export interface AuthContextType {
   user: User | null;
+  organization: Organization | null;
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (credentials: { email: string; password: string }) => Promise<AuthLoginResponse>;
+  selection: OrganizationSelection | null;
+  canSwitchOrganization: boolean;
+  sessionVersion: number;
+  selectOrganization: (id: string) => Promise<void>;
+  beginOrganizationSwitch: () => Promise<void>;
+  cancelSelection: () => void;
+  login: (credentials: { email: string; password: string }) => Promise<PasswordLoginResponse>;
   loginWithGoogle: (credential: string) => Promise<GoogleLoginResponse>;
   register: (data: {
     organizationName: string;
