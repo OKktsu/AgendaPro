@@ -4,6 +4,7 @@ import { PrismaClient as TenantClient } from '@agendapro/tenant-client';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { createAccountsRuntime } from './runtime.js';
+import { InvalidGoogleCredentialError } from '../auth/google.js';
 
 const host = process.env.MULTIBASE_PG_HOST ?? '127.0.0.1';
 const port = Number(process.env.MULTIBASE_PG_PORT ?? 55433);
@@ -19,7 +20,14 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
   () => {
     const accounts = new AccountsClient({ datasources: { db: { url: accountsUrl } } });
     const runtime = createAccountsRuntime(accountsUrl, JSON.stringify(urls));
-    const app = buildApp({ ...runtime.dependencies, jwtSecret: 'lab-jwt-only' });
+    const app = buildApp({
+      ...runtime.dependencies,
+      jwtSecret: 'lab-jwt-only',
+      verifyGoogleCredential: async (credential) => {
+        if (credential !== 'google-b-lab-token') throw new InvalidGoogleCredentialError();
+        return { subject: 'google-b-lab-subject', email: 'lab-b@example.test', name: 'Empresa B' };
+      },
+    });
     const clients: TenantClient[] = [];
     const identities: Array<{ token: string; user: { id: string; organizationId: string } }> = [];
     const password = 'LabPassword123!';
@@ -31,7 +39,13 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
           const registered = await app.inject({
             method: 'POST',
             url: '/auth/register',
-            payload: { email, password, name, organizationName: name },
+            payload: {
+              email,
+              password,
+              name,
+              organizationName: name,
+              ...(name === 'Empresa B' ? { googleCredential: 'google-b-lab-token' } : {}),
+            },
           });
           expect(registered.statusCode, registered.body).toBe(201);
         }
@@ -60,6 +74,59 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
       await Promise.all(clients.map((client) => client.$disconnect()));
     });
     const headers = (index: number) => ({ authorization: `Bearer ${identities[index].token}` });
+
+    it('cadastro Google persiste o vínculo e permite novo login no tenant correto', async () => {
+      const account = await accounts.account.findUniqueOrThrow({
+        where: { email: 'lab-b@example.test' },
+      });
+      expect(account.googleSubject).toBe('google-b-lab-subject');
+      const response = await app.inject({
+        method: 'POST',
+        url: '/auth/google',
+        payload: { credential: 'google-b-lab-token' },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json().user).toMatchObject({
+        id: account.id,
+        organizationId: identities[1].user.organizationId,
+      });
+      const session = await app.inject({
+        method: 'GET',
+        url: '/auth/me',
+        headers: { authorization: `Bearer ${response.json().token}` },
+      });
+      expect(session.statusCode).toBe(200);
+      expect(session.json().user.organizationId).toBe(account.tenantId);
+    });
+
+    it('vincula o Google em Accounts e mantém essa identidade fora da base do tenant', async () => {
+      const account = await accounts.account.findUniqueOrThrow({
+        where: { id: identities[0].user.id },
+      });
+      const googleSubject = `google-subject-${account.id}`;
+      const loginWithGoogle = runtime.dependencies.loginWithGoogle;
+      expect(loginWithGoogle).toBeDefined();
+
+      const result = await loginWithGoogle!(
+        { subject: googleSubject, email: account.email },
+        'lab-jwt-only',
+      );
+
+      expect(result.user).toMatchObject({
+        id: account.id,
+        organizationId: account.tenantId,
+        email: account.email,
+        name: 'Empresa A',
+      });
+      expect(
+        (await accounts.account.findUniqueOrThrow({ where: { id: account.id } })).googleSubject,
+      ).toBe(googleSubject);
+
+      const tenantColumns = await clients[0].$queryRaw<
+        Array<{ column_name: string }>
+      >`SELECT column_name FROM information_schema.columns WHERE table_name = 'UserProfile'`;
+      expect(tenantColumns.map((column) => column.column_name)).not.toContain('googleSubject');
+    });
 
     it('guarda nome somente no perfil do tenant e hash somente no Accounts', async () => {
       const columns = await accounts.$queryRaw<

@@ -3,7 +3,8 @@ import { PrismaClient as AccountsClient, Prisma } from '@agendapro/accounts-clie
 import { PrismaClient as TenantClient } from '@agendapro/tenant-client';
 import type { z } from 'zod';
 import { InvalidCredentialsError, type loginBodySchema } from '../auth/login.js';
-import { signJwt } from '../auth/jwt.js';
+import { signJwt, type AuthenticatedUser } from '../auth/jwt.js';
+import { GoogleRegistrationRequiredError, type GoogleIdentity } from '../auth/google.js';
 import {
   EmailAlreadyRegisteredError,
   hashPassword,
@@ -53,8 +54,69 @@ export function createAccountsAuth(
     return { user, token: signJwt(user, secret) };
   }
 
-  async function register(input: z.infer<typeof registerBodySchema>) {
-    const email = input.email.trim().toLowerCase();
+  async function loginWithGoogle(identity: GoogleIdentity, secret: string) {
+    const linkedAccount = await accounts.account.findUnique({
+      where: { googleSubject: identity.subject },
+      include: { tenant: true },
+    });
+    const account =
+      linkedAccount ??
+      (await accounts.account.findUnique({
+        where: { email: identity.email },
+        include: { tenant: true },
+      }));
+
+    if (!account) throw new GoogleRegistrationRequiredError(identity);
+
+    if (
+      !account ||
+      (!linkedAccount && account.email !== identity.email) ||
+      account.tenant.status !== 'ACTIVE' ||
+      (account.googleSubject && account.googleSubject !== identity.subject)
+    ) {
+      throw new InvalidCredentialsError();
+    }
+
+    if (!account.googleSubject) {
+      const linked = await accounts.account.updateMany({
+        where: { id: account.id, googleSubject: null },
+        data: { googleSubject: identity.subject },
+      });
+
+      if (linked.count !== 1) {
+        const concurrentLink = await accounts.account.findUnique({
+          where: { googleSubject: identity.subject },
+          select: { id: true },
+        });
+
+        if (concurrentLink?.id !== account.id) {
+          throw new InvalidCredentialsError();
+        }
+      }
+    }
+
+    const context = { userId: account.id, organizationId: account.tenantId, role: account.role };
+    const db = await resolver.resolve(context);
+    const profiles = await db.$queryRaw<Array<{ name: string }>>`
+      SELECT "name" FROM "UserProfile" WHERE "accountId" = ${account.id}::uuid AND "organizationId" = ${account.tenantId}::uuid
+    `;
+    if (profiles.length !== 1) throw new InvalidCredentialsError();
+
+    const user: AuthenticatedUser = {
+      id: account.id,
+      organizationId: account.tenantId,
+      role: account.role,
+      email: account.email,
+      name: profiles[0].name,
+    };
+    return { user, token: signJwt(user, secret) };
+  }
+
+  async function register(
+    input: z.infer<typeof registerBodySchema>,
+    googleIdentity?: GoogleIdentity,
+  ) {
+    const email = googleIdentity?.email ?? input.email.trim().toLowerCase();
     const passwordHash = await hashPassword(input.password);
     let accountId: string = randomUUID();
     let tenantId: string = randomUUID();
@@ -70,6 +132,9 @@ export function createAccountsAuth(
             if (
               existing.role !== 'OWNER' ||
               existing.tenant.status !== 'FAILED' ||
+              (googleIdentity &&
+                existing.googleSubject &&
+                existing.googleSubject !== googleIdentity.subject) ||
               !(await verifyPassword(input.password, existing.passwordHash))
             ) {
               throw new EmailAlreadyRegisteredError();
@@ -82,6 +147,12 @@ export function createAccountsAuth(
               throw new ProvisioningUnavailableError();
             accountId = existing.id;
             tenantId = existing.tenantId;
+            if (googleIdentity && !existing.googleSubject) {
+              await tx.account.update({
+                where: { id: existing.id },
+                data: { googleSubject: googleIdentity.subject },
+              });
+            }
             return existing.tenant.databaseKey;
           }
           const assigned = await tx.tenantDirectory.findMany({ select: { databaseKey: true } });
@@ -91,7 +162,14 @@ export function createAccountsAuth(
           if (!key) throw new ProvisioningUnavailableError();
           await tx.tenantDirectory.create({ data: { id: tenantId, databaseKey: key } });
           await tx.account.create({
-            data: { id: accountId, tenantId, email, passwordHash, role: 'OWNER' },
+            data: {
+              id: accountId,
+              tenantId,
+              email,
+              passwordHash,
+              role: 'OWNER',
+              googleSubject: googleIdentity?.subject,
+            },
           });
           return key;
         },
@@ -151,5 +229,5 @@ export function createAccountsAuth(
     }
   }
 
-  return { login, register };
+  return { login, loginWithGoogle, register };
 }

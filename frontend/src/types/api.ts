@@ -20,7 +20,15 @@ export interface AuthLoginResponse {
   user: User;
 }
 
+export type GoogleLoginResponse =
+  | AuthLoginResponse
+  | {
+      status: 'registration_required';
+      profile: { email: string; name: string };
+    };
+
 export interface AuthRegisterResponse {
+  token?: string;
   organization: Organization;
   user: User;
 }

@@ -2,6 +2,7 @@ import { apiFetch } from './client.js';
 import type {
   Appointment,
   AuthLoginResponse,
+  GoogleLoginResponse,
   AuthMeResponse,
   AuthRegisterResponse,
   AvailabilityResult,
@@ -31,11 +32,19 @@ export const authApi = {
     });
   },
 
+  async loginWithGoogle(credential: string): Promise<GoogleLoginResponse> {
+    return apiFetch<GoogleLoginResponse>('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ credential }),
+    });
+  },
+
   async register(data: {
     organizationName: string;
     name: string;
     email: string;
     password: string;
+    googleCredential?: string;
   }): Promise<AuthRegisterResponse> {
     return apiFetch<AuthRegisterResponse>('/auth/register', {
       method: 'POST',
