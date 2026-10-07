@@ -7,6 +7,10 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
+    "worker:dev": "tsx src/worker.ts",
+    "worker:start": "node dist/worker.js",
+    "queue:probe": "tsx src/queue/enqueue.ts",
+    "test:queue": "node test-support/run-queue-tests.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "node test-support/run-multibase-tests.mjs",
@@ -20,9 +24,11 @@
   "dependencies": {
     "@fastify/cors": "^11.0.1",
     "@prisma/client": "^6.6.0",
+    "bullmq": "^6.3.11",
     "dotenv": "^16.5.0",
     "fastify": "^5.3.2",
     "google-auth-library": "^11.1.0",
+    "ioredis": "^5.11.1",
     "zod": "^3.24.3"
   },
   "devDependencies": {

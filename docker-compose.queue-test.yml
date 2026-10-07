@@ -1,0 +1,26 @@
+services:
+  redis-test:
+    image: redis:7.4-alpine
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--appendfsync',
+        'everysec',
+        '--maxmemory',
+        '64mb',
+        '--maxmemory-policy',
+        'noeviction',
+      ]
+    ports:
+      - '127.0.0.1:${QUEUE_TEST_PORT:?Porta de teste obrigatória}:6379'
+    volumes:
+      - queue_test_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 1s
+      timeout: 3s
+      retries: 20
+volumes:
+  queue_test_data:

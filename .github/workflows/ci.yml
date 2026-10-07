@@ -36,6 +36,8 @@ jobs:
       - run: npm ci
       - run: npm run db:generate
       - run: npm run test:integration
+      - name: Testar filas com Redis descartável
+        run: npm run test:queue
 
   auto-merge:
     name: Enable auto-merge
