@@ -2150,6 +2150,58 @@ select.input-field {
   gap: 1.125rem;
 }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--color-ink-muted);
+  margin: -0.25rem 0;
+}
+
+.auth-divider span {
+  height: 1px;
+  flex: 1;
+  background-color: var(--color-border);
+}
+
+.auth-divider small {
+  font-size: 0.75rem;
+}
+
+.google-sign-in {
+  position: relative;
+  min-height: 44px;
+  display: flex;
+  justify-content: center;
+}
+
+.google-sign-in > div:first-child {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.google-sign-in-disabled {
+  opacity: 0.55;
+}
+
+.google-sign-in-overlay {
+  position: absolute;
+  inset: 0;
+  cursor: wait;
+}
+
+.google-sign-in-note {
+  margin: 0;
+  color: var(--color-ink-muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.google-sign-in-note code {
+  color: var(--color-ink-secondary);
+}
+
 /* ==========================================================================
    Responsividade Mobile (< 768px)
    ========================================================================== */

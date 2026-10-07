@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 import { prisma } from '../database/prisma.js';
+import type { GoogleIdentity } from './google.js';
 
 const scrypt = promisify(scryptCallback);
 
@@ -13,10 +14,14 @@ export const registerBodySchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().email().max(254),
   password: z.string().min(8).max(72),
+  googleCredential: z.string().min(1).max(10_000).optional(),
 });
 
-export async function registerOrganizationOwner(input: z.infer<typeof registerBodySchema>) {
-  const email = input.email.toLowerCase();
+export async function registerOrganizationOwner(
+  input: z.infer<typeof registerBodySchema>,
+  googleIdentity?: GoogleIdentity,
+) {
+  const email = googleIdentity?.email ?? input.email.toLowerCase();
   const passwordHash = await hashPassword(input.password);
 
   try {
@@ -30,6 +35,7 @@ export async function registerOrganizationOwner(input: z.infer<typeof registerBo
           name: input.name,
           email,
           passwordHash,
+          googleSubject: googleIdentity?.subject,
           role: 'OWNER',
           organizationId: organization.id,
         },

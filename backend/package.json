@@ -14,13 +14,15 @@
     "db:lab:down": "docker compose -f ../docker-compose.multibase-test.yml -p agendapro-multibase-lab down",
     "db:generate": "prisma generate && prisma generate --schema prisma/accounts/schema.prisma && prisma generate --schema prisma/tenant/schema.prisma",
     "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "db:deploy:accounts": "prisma migrate deploy --schema prisma/accounts/schema.prisma"
   },
   "dependencies": {
-    "@prisma/client": "^6.6.0",
     "@fastify/cors": "^11.0.1",
+    "@prisma/client": "^6.6.0",
     "dotenv": "^16.5.0",
     "fastify": "^5.3.2",
+    "google-auth-library": "^11.1.0",
     "zod": "^3.24.3"
   },
   "devDependencies": {

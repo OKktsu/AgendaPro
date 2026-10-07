@@ -8,6 +8,16 @@ import {
   registerOrganizationOwner,
 } from './auth/register.js';
 import { InvalidCredentialsError, loginBodySchema, loginUser } from './auth/login.js';
+import { signJwt } from './auth/jwt.js';
+import {
+  GoogleAuthenticationUnavailableError,
+  GoogleRegistrationRequiredError,
+  InvalidGoogleCredentialError,
+  googleLoginBodySchema,
+  loginWithGoogleIdentity,
+  verifyGoogleCredential,
+  type GoogleIdentity,
+} from './auth/google.js';
 import {
   createAuthMiddleware,
   createRequireOwnerMiddleware,
@@ -76,6 +86,12 @@ type AppDependencies = {
     input: Parameters<typeof loginUser>[0],
     secret: string,
   ) => ReturnType<typeof loginUser>;
+  googleClientId?: string;
+  verifyGoogleCredential?: typeof verifyGoogleCredential;
+  loginWithGoogle?: (
+    identity: GoogleIdentity,
+    secret: string,
+  ) => ReturnType<typeof loginWithGoogleIdentity>;
   jwtSecret?: string;
   catalogDatabase?: CatalogDatabase;
   createService?: typeof createService;
@@ -106,6 +122,9 @@ export function buildApp(dependencies: AppDependencies = {}) {
     tenantDatabases.resolve(getTenantContext(request));
   const registerOwner = dependencies.registerOrganizationOwner ?? registerOrganizationOwner;
   const login = dependencies.loginUser ?? loginUser;
+  const loginWithGoogle = dependencies.loginWithGoogle ?? loginWithGoogleIdentity;
+  const verifyGoogle = dependencies.verifyGoogleCredential ?? verifyGoogleCredential;
+  const googleClientId = dependencies.googleClientId ?? process.env.GOOGLE_CLIENT_ID;
   const jwtSecret =
     dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'agendapro-dev-secret-change-in-production';
   const authenticate = createAuthMiddleware(jwtSecret);
@@ -171,6 +190,54 @@ export function buildApp(dependencies: AppDependencies = {}) {
     }
   });
 
+  app.post('/auth/google', async (request, reply) => {
+    const parsedBody = googleLoginBodySchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({
+        message: 'Credencial do Google inválida.',
+        issues: parsedBody.error.flatten().fieldErrors,
+      });
+    }
+
+    try {
+      const identity = await verifyGoogle(parsedBody.data.credential, googleClientId);
+      const result = await loginWithGoogle(identity, jwtSecret);
+      return reply.code(200).send(result);
+    } catch (error) {
+      if (error instanceof GoogleRegistrationRequiredError) {
+        return reply.code(200).send({
+          status: 'registration_required',
+          profile: { email: error.identity.email, name: error.identity.name ?? '' },
+        });
+      }
+      if (error instanceof GoogleAuthenticationUnavailableError) {
+        return reply.code(503).send({ message: error.message });
+      }
+
+      if (error instanceof InvalidGoogleCredentialError) {
+        app.log.warn({ reason: 'invalid_google_credential' }, 'Google sign-in rejected');
+        return reply.code(401).send({
+          message:
+            'Não foi possível autenticar com Google ou encontrar uma conta AgendaPro para este e-mail.',
+        });
+      }
+
+      if (error instanceof InvalidCredentialsError) {
+        app.log.warn(
+          { reason: 'no_matching_account_or_google_link_conflict' },
+          'Google sign-in rejected',
+        );
+        return reply.code(401).send({
+          message:
+            'Não foi possível autenticar com Google ou encontrar uma conta AgendaPro para este e-mail.',
+        });
+      }
+
+      throw error;
+    }
+  });
+
   app.get('/auth/me', { preHandler: authenticate }, async (request, reply) => {
     return reply.code(200).send({ user: request.user });
   });
@@ -211,10 +278,29 @@ export function buildApp(dependencies: AppDependencies = {}) {
     }
 
     try {
-      const registration = await registerOwner(parsedBody.data);
+      const identity = parsedBody.data.googleCredential
+        ? await verifyGoogle(parsedBody.data.googleCredential, googleClientId)
+        : undefined;
+      const registration = identity
+        ? await registerOwner({ ...parsedBody.data, email: identity.email }, identity)
+        : await registerOwner(parsedBody.data);
 
-      return reply.code(201).send(registration);
+      return reply
+        .code(201)
+        .send(
+          identity
+            ? { ...registration, token: signJwt(registration.user, jwtSecret) }
+            : registration,
+        );
     } catch (error) {
+      if (error instanceof GoogleAuthenticationUnavailableError) {
+        return reply.code(503).send({ message: error.message });
+      }
+      if (error instanceof InvalidGoogleCredentialError) {
+        return reply.code(401).send({
+          message: 'Seu acesso Google expirou ou é inválido. Entre com Google novamente.',
+        });
+      }
       if (error instanceof EmailAlreadyRegisteredError) {
         return reply.code(409).send({ message: error.message });
       }

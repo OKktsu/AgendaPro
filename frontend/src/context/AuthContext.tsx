@@ -41,13 +41,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return result;
   };
 
+  const loginWithGoogle = async (credential: string) => {
+    const result = await authApi.loginWithGoogle(credential);
+    if ('status' in result) return result;
+    setToken(result.token);
+    setTokenState(result.token);
+    setUser(result.user);
+    return result;
+  };
+
   const register = async (data: {
     organizationName: string;
     name: string;
     email: string;
     password: string;
+    googleCredential?: string;
   }) => {
     const result = await authApi.register(data);
+    if (result.token) {
+      setToken(result.token);
+      setTokenState(result.token);
+      setUser(result.user);
+    }
     return result;
   };
 
@@ -65,6 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         isAuthenticated: !!user && !!tokenState,
         login,
+        loginWithGoogle,
         register,
         logout,
       }}

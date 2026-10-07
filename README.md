@@ -10,7 +10,7 @@ AgendaPro é uma plataforma de agendamento para negócios de serviços. Esta pri
 
 ## Pré-requisitos
 
-- Node.js 22 ou superior
+- Node.js 24 ou superior
 - Docker Desktop (para o PostgreSQL)
 
 ## Rodando localmente
@@ -25,28 +25,40 @@ AgendaPro é uma plataforma de agendamento para negócios de serviços. Esta pri
 
    ```bash
    cp .env.example .env
+   cp .env.example backend/.env
+   cp frontend/.env.example frontend/.env
    ```
 
-   No Windows PowerShell: `Copy-Item .env.example .env`.
+   No Windows PowerShell: use `Copy-Item` no lugar de `cp`.
 
-3. Suba o banco:
+3. Para habilitar “Continuar com Google”, crie um OAuth Client ID do tipo **Web application**
+   no Google Cloud Console. Adicione `http://localhost:5173` como origem JavaScript autorizada,
+   depois use o mesmo Client ID em `GOOGLE_CLIENT_ID` no `backend/.env` (e no `.env` da raiz) e em
+   `VITE_GOOGLE_CLIENT_ID` no `frontend/.env`. Não é necessário colocar um Client Secret no
+   frontend. Sem essas configurações, o login por e-mail e senha continua disponível.
+
+4. Suba o banco:
 
    ```bash
    docker compose up -d
    ```
 
-4. Gere o cliente do Prisma e aplique as migrations:
+5. Gere o cliente do Prisma e aplique as migrations:
 
    ```bash
    npm run db:generate
    npm run db:migrate
    ```
 
-5. Inicie a aplicação:
+6. Inicie a aplicação:
 
    ```bash
    npm run dev
    ```
+
+   No Windows, se o Node reportar `UNABLE_TO_VERIFY_LEAF_SIGNATURE` ao consultar o Google,
+   habilite os certificados confiáveis do sistema antes de iniciar: `$env:NODE_OPTIONS = '--use-system-ca'`.
+   Essa opção mantém a validação HTTPS ativa.
 
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:3000`
@@ -88,6 +100,29 @@ Authorization: Bearer <SEU_TOKEN_JWT>
    ```
 
 > **Segurança multitenant**: O contexto de organização e privilégios é derivado unicamente do token JWT. O backend rejeita tentativas de manipulação ou troca de empresa via `body`, `query` ou `params`.
+
+### Login com Google (OAuth 2.0 / OpenID Connect)
+
+Na tela de entrada, o botão do Google usa o Google Identity Services para obter uma credencial de
+identidade. O backend valida assinatura, emissor, validade e audiência da credencial com o Client
+ID configurado e exige e-mail verificado. O token do Google nunca é usado diretamente nas rotas da
+AgendaPro: após a validação, o backend associa o identificador estável do Google (`sub`) a uma
+conta existente e emite o JWT próprio da aplicação.
+
+Se não existe conta, o primeiro login retorna `registration_required` com nome e e-mail verificados
+e abre o cadastro de empresa. O usuário confirma a empresa e define uma senha local; o backend
+revalida a credencial Google, utiliza o e-mail verificado e cria a conta já vinculada, emitindo a sessão.
+A credencial de cadastro permanece apenas em memória no frontend. Nenhuma empresa é criada ao
+simplesmente clicar no Google. A associação é persistida no campo `googleSubject` da base de identidade (`User` no
+modo compartilhado ou `Account` no modo Accounts), nunca na base de dados do tenant.
+
+Para ativar localmente, configure o mesmo Client ID em `GOOGLE_CLIENT_ID` no `.env` da raiz e
+`VITE_GOOGLE_CLIENT_ID` em `frontend/.env`, reinicie a aplicação e aplique as migrations. O
+Client ID é público; não adicione o Client Secret ao frontend.
+
+No modo padrão (`DATABASE_MODE=shared`), aplique as migrations com `npm run db:deploy -w backend`.
+Se estiver usando o modo de base dedicada, aplique também a migration de Accounts com
+`npm run db:deploy:accounts -w backend`, apontando `ACCOUNTS_DATABASE_URL` para a base Accounts.
 
 ## Reservas sem Conflito de Horário e Garantia PostgreSQL
 

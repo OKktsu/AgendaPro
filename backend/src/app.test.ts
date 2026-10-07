@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EmailAlreadyRegisteredError } from './auth/register.js';
 import { InvalidCredentialsError } from './auth/login.js';
+import {
+  GoogleAuthenticationUnavailableError,
+  InvalidGoogleCredentialError,
+} from './auth/google.js';
 import { signJwt } from './auth/jwt.js';
 import { buildApp } from './app.js';
 
@@ -215,6 +219,114 @@ describe('POST /auth/login', () => {
     expect(response.statusCode).toBe(400);
     expect(response.json()).toHaveProperty('issues');
     expect(loginUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /auth/google', () => {
+  const apps = new Set<ReturnType<typeof buildApp>>();
+  const identity = { subject: 'google-subject-123', email: 'marcelo@example.com' };
+  const user = {
+    id: '60d98c58-1684-4a11-987c-cf19f7e526c9',
+    name: 'Marcelo Luan',
+    email: 'marcelo@example.com',
+    role: 'OWNER' as const,
+    organizationId: '4e0d9057-4648-44a2-8489-3c22098d3a93',
+  };
+
+  afterEach(async () => {
+    await Promise.all([...apps].map((app) => app.close()));
+    apps.clear();
+  });
+
+  it('verifies the Google credential and returns the application session', async () => {
+    const verifyGoogleCredential = vi.fn().mockResolvedValue(identity);
+    const loginWithGoogle = vi.fn().mockResolvedValue({ token: 'jwt.google', user });
+    const app = buildApp({
+      googleClientId: 'google-client-id',
+      verifyGoogleCredential,
+      loginWithGoogle,
+      jwtSecret: 'google-route-test-secret',
+    });
+    apps.add(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/google',
+      payload: { credential: 'signed-google-token' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ token: 'jwt.google', user });
+    expect(verifyGoogleCredential).toHaveBeenCalledWith('signed-google-token', 'google-client-id');
+    expect(loginWithGoogle).toHaveBeenCalledWith(identity, 'google-route-test-secret');
+  });
+
+  it('rejects malformed credentials before calling Google verification', async () => {
+    const verifyGoogleCredential = vi.fn();
+    const app = buildApp({ googleClientId: 'google-client-id', verifyGoogleCredential });
+    apps.add(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/google',
+      payload: { credential: '' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(verifyGoogleCredential).not.toHaveBeenCalled();
+  });
+
+  it('returns a setup message when Google login is not configured', async () => {
+    const verifyGoogleCredential = vi
+      .fn()
+      .mockRejectedValue(new GoogleAuthenticationUnavailableError());
+    const app = buildApp({ verifyGoogleCredential });
+    apps.add(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/google',
+      payload: { credential: 'signed-google-token' },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      message: 'Login com Google não está configurado neste ambiente.',
+    });
+  });
+
+  it('returns a generic unauthorized error for invalid Google tokens', async () => {
+    const verifyGoogleCredential = vi.fn().mockRejectedValue(new InvalidGoogleCredentialError());
+    const app = buildApp({ googleClientId: 'google-client-id', verifyGoogleCredential });
+    apps.add(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/google',
+      payload: { credential: 'invalid-google-token' },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toHaveProperty('message', expect.stringContaining('Google'));
+  });
+
+  it('does not issue a session to an identity without an AgendaPro account', async () => {
+    const loginWithGoogle = vi.fn().mockRejectedValue(new InvalidCredentialsError());
+    const app = buildApp({
+      googleClientId: 'google-client-id',
+      verifyGoogleCredential: vi.fn().mockResolvedValue(identity),
+      loginWithGoogle,
+    });
+    apps.add(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/google',
+      payload: { credential: 'signed-google-token' },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().message).toContain('conta AgendaPro');
   });
 });
 

@@ -30,14 +30,15 @@ model TenantDirectory {
 }
 
 model Account {
-  id           String          @id @db.Uuid
-  email        String          @unique
-  passwordHash String
-  role         AccountRole     @default(STAFF)
-  tenantId     String          @db.Uuid
-  tenant       TenantDirectory @relation(fields: [tenantId], references: [id])
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id            String          @id @db.Uuid
+  email         String          @unique
+  passwordHash  String
+  googleSubject String?         @unique
+  role          AccountRole     @default(STAFF)
+  tenantId      String          @db.Uuid
+  tenant        TenantDirectory @relation(fields: [tenantId], references: [id])
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   @@index([tenantId])
 }

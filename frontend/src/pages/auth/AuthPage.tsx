@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Alert } from '../../components/common/Alert.js';
 import { Button } from '../../components/common/Button.js';
 import { CalendarIcon } from '../../components/common/Icons.js';
 import { Input } from '../../components/common/Input.js';
 import { useAuth } from '../../context/useAuth.js';
+import { GoogleSignInButton } from './GoogleSignInButton.js';
 
 export const AuthPage: React.FC = () => {
-  const { login, register } = useAuth();
+  const { login, loginWithGoogle, register } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
 
   // Form states
@@ -14,6 +15,7 @@ export const AuthPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [organizationName, setOrganizationName] = useState('');
+  const [googleCredential, setGoogleCredential] = useState<string | null>(null);
 
   // Status states
   const [isLoading, setIsLoading] = useState(false);
@@ -36,6 +38,35 @@ export const AuthPage: React.FC = () => {
     }
   };
 
+  const handleGoogleCredential = useCallback(
+    async (credential: string) => {
+      setErrorMessage(null);
+      setSuccessMessage(null);
+      setIsLoading(true);
+      try {
+        const result = await loginWithGoogle(credential);
+        if ('status' in result && result.status === 'registration_required') {
+          setGoogleCredential(credential);
+          setEmail(result.profile.email);
+          setName(result.profile.name);
+          setPassword('');
+          setMode('register');
+          setSuccessMessage('Conta Google confirmada! Cadastre sua empresa para começar.');
+        }
+      } catch (err: unknown) {
+        const error = err as { message?: string };
+        setErrorMessage(error.message || 'Não foi possível entrar com o Google.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loginWithGoogle],
+  );
+
+  const handleGoogleError = useCallback((message: string) => {
+    setErrorMessage(message);
+  }, []);
+
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -54,7 +85,12 @@ export const AuthPage: React.FC = () => {
         name,
         email,
         password,
+        ...(googleCredential ? { googleCredential } : {}),
       });
+
+      if (googleCredential) {
+        return;
+      }
 
       setSuccessMessage('Empresa cadastrada com sucesso! Entre com sua senha para começar.');
       setMode('login');
@@ -90,6 +126,8 @@ export const AuthPage: React.FC = () => {
             className={`auth-tab ${mode === 'login' ? 'auth-tab-active' : ''}`}
             onClick={() => {
               setMode('login');
+              setGoogleCredential(null);
+              setSuccessMessage(null);
               setErrorMessage(null);
             }}
           >
@@ -157,6 +195,16 @@ export const AuthPage: React.FC = () => {
             >
               Acessar Sistema
             </Button>
+            <div className="auth-divider" aria-hidden="true">
+              <span />
+              <small>ou</small>
+              <span />
+            </div>
+            <GoogleSignInButton
+              disabled={isLoading}
+              onCredential={handleGoogleCredential}
+              onError={handleGoogleError}
+            />
           </form>
         ) : (
           <form onSubmit={handleRegisterSubmit} className="auth-form">
@@ -180,6 +228,7 @@ export const AuthPage: React.FC = () => {
             <Input
               label="E-mail Corporativo"
               type="email"
+              readOnly={!!googleCredential}
               required
               autoComplete="email"
               value={email}
