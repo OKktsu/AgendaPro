@@ -2,8 +2,12 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   verify:
@@ -32,3 +36,32 @@ jobs:
       - run: npm ci
       - run: npm run db:generate
       - run: npm run test:integration
+
+  auto-merge:
+    name: Enable auto-merge
+    needs: [verify, multibase]
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Ativar merge após os checks obrigatórios
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          current=$(gh pr view "$PR_NUMBER" --json state,isDraft,headRefOid,baseRefName)
+          if ! jq -e --arg sha "$HEAD_SHA" \
+            '.state == "OPEN" and .isDraft == false and .headRefOid == $sha and .baseRefName == "main"' \
+            <<< "$current" >/dev/null; then
+            echo "A PR mudou desde esta execução; aguardando o CI da revisão atual."
+            exit 0
+          fi
+          gh pr merge "$PR_NUMBER" --auto --merge --match-head-commit "$HEAD_SHA"

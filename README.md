@@ -73,6 +73,30 @@ npm run build
 npm run format:check
 ```
 
+## Merge automático após CI
+
+PRs prontas do próprio repositório para `main` ativam auto-merge pela etapa
+`Enable auto-merge` do CI. A etapa aguarda `verify` e `multibase`, usa o token
+temporário do GitHub Actions e confere se a revisão da PR continua a mesma.
+O GitHub conclui o merge apenas após os checks obrigatórios e demais regras
+de proteção. Rascunhos e PRs de forks não ativam auto-merge.
+
+A proteção de `main` exige `verify`, `multibase`, `Build frontend` e
+`Enable auto-merge`, além de branch atualizada e conversas resolvidas. Não há
+aprovação humana obrigatória. A configuração está versionada em
+`.github/branch-protection.main.json`, mas é uma configuração do repositório:
+alterar o arquivo sozinho não modifica as regras no GitHub.
+
+Para reaplicar em uma conta com permissão administrativa:
+
+```bash
+gh api --method PATCH repos/OKktsu/AgendaPro -F allow_auto_merge=true
+gh api --method PUT repos/OKktsu/AgendaPro/branches/main/protection --input .github/branch-protection.main.json
+```
+
+Os workflows de frontend geram apenas um artefato de build; o merge não publica
+a aplicação no GitHub Pages.
+
 ## Autenticação e Contexto de Organização
 
 As rotas protegidas da API identificam o usuário autenticado, sua organização e seu papel (`role`) exclusivamente a partir do token JWT validado.
