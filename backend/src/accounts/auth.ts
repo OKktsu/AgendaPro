@@ -13,6 +13,13 @@ import {
 } from '../auth/register.js';
 import type { DedicatedTenantDatabaseResolver } from '../tenant/dedicated-database.js';
 
+export class TenantSelectionRequiredError extends Error {
+  readonly statusCode = 409;
+  constructor() {
+    super('Escolha uma empresa para continuar.');
+  }
+}
+
 export class ProvisioningUnavailableError extends Error {
   readonly statusCode = 503;
   constructor() {
@@ -26,44 +33,60 @@ export function createAccountsAuth(
   resolver: DedicatedTenantDatabaseResolver,
   databaseUrls: Readonly<Record<string, string>>,
 ) {
-  async function login(input: z.infer<typeof loginBodySchema>, secret: string) {
-    const account = await accounts.account.findUnique({
-      where: { email: input.email.trim().toLowerCase() },
-      include: { tenant: true },
+  async function session(
+    account: { id: string; email: string },
+    secret: string,
+    tenantId?: string,
+  ) {
+    const memberships = await accounts.membership.findMany({
+      where: {
+        accountId: account.id,
+        status: 'ACTIVE',
+        tenant: { status: 'ACTIVE' },
+        ...(tenantId ? { tenantId } : {}),
+      },
     });
-    if (
-      !account ||
-      !(await verifyPassword(input.password, account.passwordHash)) ||
-      account.tenant.status !== 'ACTIVE'
-    ) {
-      throw new InvalidCredentialsError();
-    }
-    const context = { userId: account.id, organizationId: account.tenantId, role: account.role };
+    if (!memberships.length) throw new InvalidCredentialsError();
+    if (memberships.length !== 1) throw new TenantSelectionRequiredError();
+    const membership = memberships[0];
+    const context = {
+      userId: account.id,
+      organizationId: membership.tenantId,
+      role: membership.role,
+    };
     const db = await resolver.resolve(context);
     const profiles = await db.$queryRaw<Array<{ name: string }>>`
-      SELECT "name" FROM "UserProfile" WHERE "accountId" = ${account.id}::uuid AND "organizationId" = ${account.tenantId}::uuid
+      SELECT "name" FROM "UserProfile" WHERE "accountId" = ${account.id}::uuid AND "organizationId" = ${membership.tenantId}::uuid
     `;
     if (profiles.length !== 1) throw new InvalidCredentialsError();
-    const user = {
+    const user: AuthenticatedUser = {
       id: account.id,
-      organizationId: account.tenantId,
-      role: account.role,
+      organizationId: membership.tenantId,
+      role: membership.role,
       email: account.email,
       name: profiles[0].name,
     };
     return { user, token: signJwt(user, secret) };
   }
 
-  async function loginWithGoogle(identity: GoogleIdentity, secret: string) {
+  async function login(input: z.infer<typeof loginBodySchema>, secret: string, tenantId?: string) {
+    const account = await accounts.account.findUnique({
+      where: { email: input.email.trim().toLowerCase() },
+    });
+    if (!account || !(await verifyPassword(input.password, account.passwordHash))) {
+      throw new InvalidCredentialsError();
+    }
+    return session(account, secret, tenantId);
+  }
+
+  async function loginWithGoogle(identity: GoogleIdentity, secret: string, tenantId?: string) {
     const linkedAccount = await accounts.account.findUnique({
       where: { googleSubject: identity.subject },
-      include: { tenant: true },
     });
     const account =
       linkedAccount ??
       (await accounts.account.findUnique({
         where: { email: identity.email },
-        include: { tenant: true },
       }));
 
     if (!account) throw new GoogleRegistrationRequiredError(identity);
@@ -71,7 +94,6 @@ export function createAccountsAuth(
     if (
       !account ||
       (!linkedAccount && account.email !== identity.email) ||
-      account.tenant.status !== 'ACTIVE' ||
       (account.googleSubject && account.googleSubject !== identity.subject)
     ) {
       throw new InvalidCredentialsError();
@@ -95,21 +117,7 @@ export function createAccountsAuth(
       }
     }
 
-    const context = { userId: account.id, organizationId: account.tenantId, role: account.role };
-    const db = await resolver.resolve(context);
-    const profiles = await db.$queryRaw<Array<{ name: string }>>`
-      SELECT "name" FROM "UserProfile" WHERE "accountId" = ${account.id}::uuid AND "organizationId" = ${account.tenantId}::uuid
-    `;
-    if (profiles.length !== 1) throw new InvalidCredentialsError();
-
-    const user: AuthenticatedUser = {
-      id: account.id,
-      organizationId: account.tenantId,
-      role: account.role,
-      email: account.email,
-      name: profiles[0].name,
-    };
-    return { user, token: signJwt(user, secret) };
+    return session(account, secret, tenantId);
   }
 
   async function register(
@@ -126,12 +134,15 @@ export function createAccountsAuth(
         async (tx) => {
           const existing = await tx.account.findUnique({
             where: { email },
-            include: { tenant: true },
+            include: { memberships: { include: { tenant: true } } },
           });
           if (existing) {
+            const membership = existing.memberships[0];
             if (
-              existing.role !== 'OWNER' ||
-              existing.tenant.status !== 'FAILED' ||
+              existing.memberships.length !== 1 ||
+              membership.role !== 'OWNER' ||
+              membership.status !== 'ACTIVE' ||
+              membership.tenant.status !== 'FAILED' ||
               (googleIdentity &&
                 existing.googleSubject &&
                 existing.googleSubject !== googleIdentity.subject) ||
@@ -140,20 +151,20 @@ export function createAccountsAuth(
               throw new EmailAlreadyRegisteredError();
             }
             const claimed = await tx.tenantDirectory.updateMany({
-              where: { id: existing.tenantId, status: 'FAILED' },
+              where: { id: membership.tenantId, status: 'FAILED' },
               data: { status: 'PROVISIONING' },
             });
-            if (claimed.count !== 1 || !databaseUrls[existing.tenant.databaseKey])
+            if (claimed.count !== 1 || !databaseUrls[membership.tenant.databaseKey])
               throw new ProvisioningUnavailableError();
             accountId = existing.id;
-            tenantId = existing.tenantId;
+            tenantId = membership.tenantId;
             if (googleIdentity && !existing.googleSubject) {
               await tx.account.update({
                 where: { id: existing.id },
                 data: { googleSubject: googleIdentity.subject },
               });
             }
-            return existing.tenant.databaseKey;
+            return membership.tenant.databaseKey;
           }
           const assigned = await tx.tenantDirectory.findMany({ select: { databaseKey: true } });
           const key = Object.keys(databaseUrls).find(
@@ -164,10 +175,9 @@ export function createAccountsAuth(
           await tx.account.create({
             data: {
               id: accountId,
-              tenantId,
               email,
               passwordHash,
-              role: 'OWNER',
+              memberships: { create: { tenantId, role: 'OWNER' } },
               googleSubject: googleIdentity?.subject,
             },
           });
