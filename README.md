@@ -1,5 +1,11 @@
 # AgendaPro
 
+## Filas: Redis e worker
+
+A fundação das filas já está disponível, ainda sem enviar lembretes. Consulte
+[o guia de execução e testes](docs/queues-foundation.md) para iniciar o Redis,
+o worker separado da API e um trabalho de demonstração.
+
 AgendaPro é uma plataforma de agendamento para negócios de serviços. Esta primeira entrega fornece uma base local reproduzível, pronta para a evolução de empresas, equipe e reservas.
 
 ## Stack
