@@ -12,10 +12,16 @@ import {
   type registerBodySchema,
 } from '../auth/register.js';
 import type { DedicatedTenantDatabaseResolver } from '../tenant/dedicated-database.js';
+import {
+  signSelectionToken,
+  verifySelectionToken,
+  type OrganizationSelection,
+  type selectOrganizationSchema,
+} from './selection.js';
 
 export class TenantSelectionRequiredError extends Error {
   readonly statusCode = 409;
-  constructor() {
+  constructor(readonly selection: OrganizationSelection) {
     super('Escolha uma empresa para continuar.');
   }
 }
@@ -47,7 +53,28 @@ export function createAccountsAuth(
       },
     });
     if (!memberships.length) throw new InvalidCredentialsError();
-    if (memberships.length !== 1) throw new TenantSelectionRequiredError();
+    if (memberships.length !== 1) {
+      const organizations: OrganizationSelection['organizations'] = [];
+      for (const membership of memberships) {
+        const db = await resolver.resolve({
+          userId: account.id,
+          organizationId: membership.tenantId,
+          role: membership.role,
+        });
+        const rows = await db.$queryRaw<Array<{ name: string }>>`
+          SELECT o."name" FROM "Organization" o JOIN "UserProfile" p ON p."organizationId" = o."id"
+          WHERE o."id" = ${membership.tenantId}::uuid AND p."accountId" = ${account.id}::uuid
+        `;
+        if (rows.length !== 1) throw new InvalidCredentialsError();
+        organizations.push({ id: membership.tenantId, name: rows[0].name, role: membership.role });
+      }
+      organizations.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+      throw new TenantSelectionRequiredError({
+        status: 'organization_selection_required',
+        selectionToken: signSelectionToken(account.id, secret),
+        organizations,
+      });
+    }
     const membership = memberships[0];
     const context = {
       userId: account.id,
@@ -239,5 +266,16 @@ export function createAccountsAuth(
     }
   }
 
-  return { login, loginWithGoogle, register };
+  async function selectOrganization(
+    input: z.infer<typeof selectOrganizationSchema>,
+    secret: string,
+  ) {
+    const accountId = verifySelectionToken(input.selectionToken, secret);
+    const account = await accounts.account.findUnique({ where: { id: accountId } });
+    if (!account) throw new InvalidCredentialsError();
+    // Reconsulta vínculo, papel e estado: a lista apresentada anteriormente não concede acesso.
+    return session(account, secret, input.organizationId);
+  }
+
+  return { login, loginWithGoogle, register, selectOrganization };
 }

@@ -28,6 +28,7 @@ export function createAccountsRuntime(accountsUrl: string, databaseUrlsJson: str
       tenantDatabaseResolver: resolver,
       loginUser: auth.login,
       loginWithGoogle: auth.loginWithGoogle,
+      selectOrganization: auth.selectOrganization,
       registerOrganizationOwner: auth.register,
     },
     async close() {

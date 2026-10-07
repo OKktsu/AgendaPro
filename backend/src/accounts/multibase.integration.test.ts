@@ -163,6 +163,37 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
         await expect(runtime.dependencies.loginUser(input, 'lab-jwt-only')).rejects.toBeInstanceOf(
           TenantSelectionRequiredError,
         );
+        const loginResponse = await app.inject({
+          method: 'POST',
+          url: '/auth/login',
+          payload: input,
+        });
+        expect(loginResponse.statusCode).toBe(200);
+        const selection = loginResponse.json();
+        expect(selection.status).toBe('organization_selection_required');
+        expect(selection.token).toBeUndefined();
+        expect(selection.organizations).toHaveLength(2);
+        expect(selection.organizations).toEqual(
+          expect.arrayContaining([
+            { id: identities[0].user.organizationId, name: 'Empresa A', role: 'OWNER' },
+            { id: tenantId, name: 'Empresa B', role: 'STAFF' },
+          ]),
+        );
+        expect(JSON.stringify(selection)).not.toContain('databaseKey');
+        const choose = (organizationId: string) =>
+          app.inject({
+            method: 'POST',
+            url: '/auth/select-organization',
+            payload: { selectionToken: selection.selectionToken, organizationId },
+          });
+        expect((await choose(randomUUID())).statusCode).toBe(401);
+        const chosen = await choose(tenantId);
+        expect(chosen.statusCode).toBe(200);
+        expect(chosen.json().user).toMatchObject({
+          id: accountId,
+          organizationId: tenantId,
+          role: 'STAFF',
+        });
         await expect(
           runtime.dependencies.loginUser(input, 'lab-jwt-only', randomUUID()),
         ).rejects.toThrow();
@@ -219,6 +250,7 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
           where: { accountId_tenantId: { accountId, tenantId } },
           data: { status: 'SUSPENDED' },
         });
+        expect((await choose(tenantId)).statusCode).toBe(401);
         expect(
           (await app.inject({ method: 'GET', url: '/auth/me', headers: auth })).statusCode,
         ).toBe(403);
@@ -255,6 +287,68 @@ describe.skipIf(process.env.MULTIBASE_INTEGRATION !== '1')(
       });
       expect(session.statusCode).toBe(200);
       expect(session.json().user.organizationId).toBe(identities[1].user.organizationId);
+    });
+
+    it('login Google com dois vínculos exige seleção antes de acessar a agenda', async () => {
+      const accountId = identities[1].user.id;
+      const tenantId = identities[0].user.organizationId;
+      await accounts.membership.create({ data: { accountId, tenantId, role: 'STAFF' } });
+      await clients[0].userProfile.create({
+        data: { id: accountId, accountId, organizationId: tenantId, name: 'Google na empresa A' },
+      });
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/auth/google',
+          payload: { credential: 'google-b-lab-token' },
+        });
+        expect(response.statusCode).toBe(200);
+        expect(response.json().status).toBe('organization_selection_required');
+        expect(response.json().organizations).toHaveLength(2);
+        const selectionToken = response.json().selectionToken;
+        expect(
+          (
+            await app.inject({
+              method: 'GET',
+              url: '/customers',
+              headers: { authorization: `Bearer ${selectionToken}` },
+            })
+          ).statusCode,
+        ).toBe(401);
+        const selected = await app.inject({
+          method: 'POST',
+          url: '/auth/select-organization',
+          payload: { selectionToken, organizationId: tenantId },
+        });
+        expect(selected.statusCode).toBe(200);
+        expect(selected.json().user).toMatchObject({
+          id: accountId,
+          organizationId: tenantId,
+          role: 'STAFF',
+        });
+        await accounts.tenantDirectory.update({
+          where: { id: tenantId },
+          data: { status: 'SUSPENDED' },
+        });
+        expect(
+          (
+            await app.inject({
+              method: 'POST',
+              url: '/auth/select-organization',
+              payload: { selectionToken, organizationId: tenantId },
+            })
+          ).statusCode,
+        ).toBe(401);
+      } finally {
+        await accounts.tenantDirectory.update({
+          where: { id: tenantId },
+          data: { status: 'ACTIVE' },
+        });
+        await clients[0].userProfile.delete({ where: { accountId } });
+        await accounts.membership.delete({
+          where: { accountId_tenantId: { accountId, tenantId } },
+        });
+      }
     });
 
     it('vincula o Google em Accounts e mantém essa identidade fora da base do tenant', async () => {
