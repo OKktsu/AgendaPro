@@ -4,6 +4,10 @@ Esta etapa prepara Redis, BullMQ e um worker independente. Não muda as rotas da
 API, não acessa bancos de empresas e não envia e-mail, WhatsApp ou Discord.
 O trabalho `probe` recebe somente um UUID e devolve o UUID e a data de processamento.
 
+Este guia descreve a etapa inicial. O worker atual também processa os lembretes
+simulados: confira [a etapa 2](appointment-reminders.md), incluindo migrations e
+configuração dos bancos antes de iniciar o worker.
+
 ## Rodar localmente
 
 Com Docker Desktop ativo e dependências instaladas, na raiz do projeto:

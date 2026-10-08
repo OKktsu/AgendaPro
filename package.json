@@ -15,6 +15,7 @@
     "test": "npm run test --workspaces --if-present",
     "test:integration": "npm run test:integration -w backend",
     "test:queue": "npm run test:queue -w backend",
+    "test:reminders": "npm run test:reminders -w backend",
     "worker:dev": "npm run worker:dev -w backend",
     "queue:probe": "npm run queue:probe -w backend",
     "db:lab:up": "npm run db:lab:up -w backend",

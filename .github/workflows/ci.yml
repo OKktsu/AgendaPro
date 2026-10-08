@@ -38,6 +38,8 @@ jobs:
       - run: npm run test:integration
       - name: Testar filas com Redis descartável
         run: npm run test:queue
+      - name: Testar lembretes com PostgreSQL e Redis descartáveis
+        run: npm run test:reminders
 
   auto-merge:
     name: Enable auto-merge

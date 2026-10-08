@@ -14,6 +14,7 @@ import { prisma } from '../database/prisma.js';
 import { retryTransaction } from '../database/retry-transaction.js';
 import { SCHEDULE_DEFAULT_TIMEZONE, timeToMinutes } from '../schedule/availability.js';
 import { CustomerNotFoundError } from './customer.js';
+import { recordReminder, cancelReminder, type ReminderSql } from '../queue/reminder-store.js';
 
 export function parseAppointmentDate(input: string | Date): Date {
   if (input instanceof Date) {
@@ -178,6 +179,8 @@ export class AppointmentNotFoundError extends Error {
 }
 
 export type AppointmentDatabase = {
+  // Ausente somente nos doubles em memória; Prisma real sempre fornece SQL transacional.
+  $executeRaw?: ReminderSql['$executeRaw'];
   customer: {
     findFirst: (args: Prisma.CustomerFindFirstArgs) => Promise<Customer | null>;
   };
@@ -211,6 +214,7 @@ export async function createAppointment(
   organizationId: string,
   db: AppointmentDatabase = prisma,
 ): Promise<Appointment> {
+  if (db.$executeRaw && !db.$transaction) throw new Error('Lembretes exigem transação.');
   const [customer, professional, service] = await Promise.all([
     db.customer.findFirst({
       where: { id: input.customerId, organizationId },
@@ -306,7 +310,7 @@ export async function createAppointment(
           );
         }
 
-        return await tx.appointment.create({
+        const appointment = await tx.appointment.create({
           data: {
             organizationId,
             customerId: input.customerId,
@@ -317,6 +321,11 @@ export async function createAppointment(
             status: 'SCHEDULED',
           },
         });
+        if (db.$executeRaw) {
+          if (!tx.$executeRaw) throw new Error('Transação sem suporte a lembretes.');
+          await recordReminder({ $executeRaw: tx.$executeRaw.bind(tx) }, appointment);
+        }
+        return appointment;
       }),
     );
   } catch (error: unknown) {
@@ -347,28 +356,37 @@ export async function cancelAppointment(
   organizationId: string,
   db: AppointmentDatabase = prisma,
 ): Promise<Appointment> {
-  const appointment = await db.appointment.findFirst({
-    where: {
-      id: appointmentId,
-      organizationId,
-    },
-  });
+  if (db.$executeRaw && !db.$transaction) throw new Error('Lembretes exigem transação.');
+  const cancel = async (tx: AppointmentDatabase) => {
+    const appointment = await tx.appointment.findFirst({
+      where: {
+        id: appointmentId,
+        organizationId,
+      },
+    });
 
-  if (!appointment) {
-    throw new AppointmentNotFoundError('Reserva não encontrada na organização.');
-  }
+    if (!appointment) {
+      throw new AppointmentNotFoundError('Reserva não encontrada na organização.');
+    }
 
-  if (appointment.status === 'CANCELLED') {
-    return appointment;
-  }
+    if (appointment.status === 'CANCELLED') {
+      return appointment;
+    }
 
-  return await db.appointment.update({
-    where: { id: appointmentId },
-    data: {
-      status: 'CANCELLED',
-      updatedAt: new Date(),
-    },
-  });
+    const cancelled = await tx.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        status: 'CANCELLED',
+        updatedAt: new Date(),
+      },
+    });
+    if (db.$executeRaw) {
+      if (!tx.$executeRaw) throw new Error('Transação sem suporte a lembretes.');
+      await cancelReminder({ $executeRaw: tx.$executeRaw.bind(tx) }, organizationId, appointmentId);
+    }
+    return cancelled;
+  };
+  return retryTransaction(() => (db.$transaction ? db.$transaction(cancel) : cancel(db)));
 }
 
 export async function listAppointments(
