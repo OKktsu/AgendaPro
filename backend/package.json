@@ -11,6 +11,7 @@
     "worker:start": "node dist/worker.js",
     "queue:probe": "tsx src/queue/enqueue.ts",
     "test:queue": "node test-support/run-queue-tests.mjs",
+    "test:reminders": "node test-support/run-reminder-tests.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "node test-support/run-multibase-tests.mjs",

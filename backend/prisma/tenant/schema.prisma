@@ -123,6 +123,7 @@ model Customer {
 }
 
 model Appointment {
+  reminders      ReminderOutbox[]
   id             String            @id @default(uuid()) @db.Uuid
   organizationId String            @db.Uuid
   organization   Organization      @relation(fields: [organizationId], references: [id])
@@ -141,6 +142,27 @@ model Appointment {
   @@index([organizationId])
   @@index([professionalId, startsAt])
   @@index([customerId])
+  @@unique([id, organizationId])
 }
 
+enum ReminderStatus {
+  PENDING
+  QUEUED
+  PROCESSED
+  CANCELLED
+  SKIPPED
+}
 
+model ReminderOutbox {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  appointmentId  String         @unique @db.Uuid
+  appointment    Appointment    @relation(fields: [appointmentId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  dueAt          DateTime
+  status         ReminderStatus @default(PENDING)
+  processedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([organizationId, status, updatedAt])
+}
