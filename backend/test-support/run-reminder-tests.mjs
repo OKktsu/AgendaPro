@@ -28,6 +28,7 @@ const env = {
   REDIS_URL: `redis://127.0.0.1:${redisPort}/0`,
   QUEUE_PREFIX: project,
   REMINDER_INTEGRATION: '1',
+  REMINDER_TEST_PROJECT: project,
   DATABASE_URL: `postgresql://lab_admin:lab_admin_only@127.0.0.1:${pgPort}/lab_admin`,
 };
 const compose = [
@@ -47,7 +48,12 @@ function run(command, args, cwd = root) {
 let code = 0;
 try {
   console.log(`Laboratório descartável ${project}: PostgreSQL ${pgPort}, Redis ${redisPort}.`);
-  code = run('docker', [...compose, 'up', '-d', '--wait']);
+  code = run(process.execPath, [
+    require.resolve('typescript/bin/tsc'),
+    '-p',
+    'backend/tsconfig.json',
+  ]);
+  if (!code) code = run('docker', [...compose, 'up', '-d', '--wait']);
   if (!code)
     code = run(process.execPath, [path.join(backend, 'test-support/prepare-multibase.mjs')]);
   if (!code)
@@ -58,12 +64,14 @@ try {
       '--schema',
       'backend/prisma/schema.prisma',
     ]);
-  if (!code)
-    code = run(
-      process.execPath,
-      [require.resolve('vitest/vitest.mjs'), 'run', 'src/queue/reminders.integration.test.ts'],
-      backend,
-    );
+  // Sequenciais: a segunda suíte usa somente o laboratório e limpa os fixtures da primeira.
+  for (const suite of [
+    'src/queue/reminders.integration.test.ts',
+    'src/queue/background-processes.integration.test.ts',
+  ]) {
+    if (code) break;
+    code = run(process.execPath, [require.resolve('vitest/vitest.mjs'), 'run', suite], backend);
+  }
 } finally {
   console.log(`Removendo somente ${project} e o volume descartável.`);
   const cleanup = run('docker', [...compose, 'down', '--volumes', '--remove-orphans']);

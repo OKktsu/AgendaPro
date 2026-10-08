@@ -47,12 +47,16 @@ export async function dispatchReminders(
   queue: Pick<ReturnType<typeof createReminderQueue>, 'add'>,
   onUnavailable: () => void = () =>
     console.error('Lembretes: base ou fila indisponível; pedido permanece no banco.'),
+  shouldStop: () => boolean = () => false,
 ) {
+  if (shouldStop()) return;
   for (const organizationId of await databases.organizations()) {
+    if (shouldStop()) return;
     try {
       const db = await databases.resolve(organizationId);
       if (!db) continue;
       for (const row of await pendingReminders(db, organizationId)) {
+        if (shouldStop()) return;
         await queue.add(
           'reminder',
           {

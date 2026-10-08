@@ -9,6 +9,15 @@ o worker separado da API e um trabalho de demonstração.
 As reservas novas também geram pedidos duráveis de lembretes, com processamento
 simulado (sem envio externo). Veja [o guia de lembretes](docs/appointment-reminders.md).
 
+Dispatcher e consumidor agora são processos independentes. Em terminais separados,
+execute `npm run dispatcher:dev` e `npm run worker:dev`; `npm run dev` continua
+iniciando somente API e frontend. Após `npm run build -w backend`, use
+`npm run dispatcher:start` e `npm run worker:start`.
+
+Migração: `worker:dev` não publica mais o outbox nem consome a demonstração probe.
+Para esta última, use `npm run worker:probe:dev` (ou `worker:probe:start` após build)
+e `npm run queue:probe`. Nenhum desses comandos altera a configuração do Docker.
+
 AgendaPro é uma plataforma de agendamento para negócios de serviços. Esta primeira entrega fornece uma base local reproduzível, pronta para a evolução de empresas, equipe e reservas.
 
 ## Stack

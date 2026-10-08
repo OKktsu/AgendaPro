@@ -1,4 +1,6 @@
-# Lembretes de agendamentos — etapa 2
+# Lembretes de agendamentos — etapas 2 e 3
+
+Próximas etapas: [entrega externa e operação](queues-roadmap.md).
 
 Esta etapa conecta as reservas a uma fila real. O processamento é simulado:
 marca `PROCESSED` no banco e imprime o resultado no worker. Não envia mensagens
@@ -8,7 +10,7 @@ externas e `PROCESSED` NÃO significa e-mail/WhatsApp entregue.
 
 1. A API cria a reserva e uma linha `ReminderOutbox` na mesma transação PostgreSQL.
    Se o pedido de lembrete falhar, a reserva também é revertida.
-2. O processo worker consulta os pedidos e os publica no Redis usando BullMQ.
+2. O dispatcher consulta os pedidos e os publica no Redis usando BullMQ.
 3. O BullMQ libera o trabalho quando chegar a hora programada.
 4. O worker resolve a empresa pelo Accounts (modo dedicado), consulta sua base
    e só processa um pedido devido cuja reserva ainda esteja `SCHEDULED` e futura.
@@ -17,7 +19,7 @@ externas e `PROCESSED` NÃO significa e-mail/WhatsApp entregue.
 Outbox é o nome do registro durável que faz a ponte entre PostgreSQL e Redis.
 A API não abre uma conexão Redis para criar/cancelar uma reserva. Não existe
 transação distribuída: pode haver reenvio após crash, tratado com ID estável e
-atualização idempotente no banco. Vários workers podem publicar o mesmo ID;
+atualização idempotente no banco. Vários dispatchers podem publicar o mesmo ID;
 o BullMQ mantém um trabalho por ID enquanto ele existir na fila.
 
 ## Política desta versão
@@ -48,7 +50,7 @@ o BullMQ mantém um trabalho por ID enquanto ele existir na fila.
 
 ## Rodar localmente
 
-O backend e worker precisam apontar para as mesmas bases. Os comandos do workspace
+API, dispatcher e consumidor precisam apontar para as mesmas bases. Os comandos do workspace
 leem `backend/.env`. Shared exige `DATABASE_URL`; dedicated exige
 `ACCOUNTS_DATABASE_URL`, `TENANT_DATABASE_URLS` e `DATABASE_MODE=dedicated`.
 O worker não usa JWT nem conta fictícia: é um processo interno com acesso restrito
@@ -69,24 +71,46 @@ devem receber todas as migrations de tenant antes de ficarem ativas.
 
 ```powershell
 docker compose up -d --wait redis
-npm run worker:dev
+npm run dispatcher:dev
 ```
+
+Em outro terminal, execute `npm run worker:dev`. São processos separados da API;
+um não inicia o outro. Sem consumidor, jobs aguardam no Redis; sem dispatcher,
+o consumidor só trabalha nos jobs já publicados. Após `npm run build -w backend`,
+os comandos equivalentes são `dispatcher:start` e `worker:start` na raiz.
+Não foi alterado o Compose nem criada outra instância Redis.
+
+Comece com um dispatcher. Para aumentar consumidores, execute mais instâncias
+de `worker:start`, todas com o mesmo `REDIS_URL`, `QUEUE_PREFIX` e mapa de bases.
+`WORKER_CONCURRENCY` define trabalhos simultâneos por consumidor (1–10), não
+a quantidade de processos. A demonstração probe usa `worker:probe:dev` e não
+consome lembretes.
 
 Com a API/frontend rodando, crie uma reserva futura com menos de 24h para observar
 o resultado no terminal. Cancelando antes de iniciar o worker, ele não processará
 o pedido. Nenhuma mensagem externa será enviada.
 
-`REMINDER_POLL_INTERVAL_MS` controla o intervalo de consulta (padrão 5000, faixa
+Somente no dispatcher, `REMINDER_POLL_INTERVAL_MS` controla o intervalo de consulta (padrão 5000, faixa
 1000–60000). Não há consultas sobrepostas no mesmo processo. Cada ciclo considera
 até 100 pedidos por empresa. Este runtime demo suporta até 20 empresas/clientes;
 acima disso bloqueia explicitamente e exige paginação/gestão de pools, não promete
-suportar escala ilimitada. Alterar mapa em runtime requer reiniciar o worker.
+suportar escala ilimitada. Alterar mapa em runtime requer reiniciar cada processo.
+
+Ao receber Ctrl+C/SIGINT/SIGTERM, os processos encerram suas conexões com limite
+de 10 segundos. O dispatcher interrompe novos ciclos, termina a publicação atual
+e não começa outro pedido. O consumidor aguarda o trabalho ativo antes de fechar
+o banco. Encerramento abrupto pode provocar reexecução; o efeito simulado é
+protegido pela atualização condicional. Supervisores/testes podem enviar uma
+mensagem IPC `{ type: 'shutdown' }`; não existe endpoint HTTP para encerramento.
 
 ## Testes e limites
 
 `npm run test:reminders` cria PostgreSQL e Redis exclusivos com nomes e portas
 aleatórios. Aplica migrations shared, Accounts e de dois tenants; testa rollback,
 duplicação, cancelamento, vencimento, concorrência, isolamento e consumo real.
+Além dos 13 casos de lembretes, sete casos iniciam processos Node independentes
+(fontes e compilados), verificam papéis exclusivos, concorrência, reinícios e
+queda/recuperação real do Redis. O script compila o backend antes do laboratório.
 Remove somente seu laboratório e volume. Nenhum dado normal é apagado.
 O CI executa esses testes em cada atualização da PR, antes do merge automático.
 

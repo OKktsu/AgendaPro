@@ -4,9 +4,9 @@ Esta etapa prepara Redis, BullMQ e um worker independente. Não muda as rotas da
 API, não acessa bancos de empresas e não envia e-mail, WhatsApp ou Discord.
 O trabalho `probe` recebe somente um UUID e devolve o UUID e a data de processamento.
 
-Este guia descreve a etapa inicial. O worker atual também processa os lembretes
-simulados: confira [a etapa 2](appointment-reminders.md), incluindo migrations e
-configuração dos bancos antes de iniciar o worker.
+Este guia descreve a demonstração inicial, agora em um processo exclusivo probe,
+sem acesso a bancos. O consumidor de lembretes e o dispatcher são separados:
+confira [o guia de lembretes](appointment-reminders.md).
 
 ## Rodar localmente
 
@@ -14,7 +14,7 @@ Com Docker Desktop ativo e dependências instaladas, na raiz do projeto:
 
 ```powershell
 docker compose up -d --wait redis
-npm run worker:dev
+npm run worker:probe:dev
 ```
 
 Deixe o worker aberto e, em outro terminal, execute:
@@ -29,7 +29,7 @@ Use Ctrl+C para encerrar o worker. API, frontend e worker são processos separad
 nenhum worker é iniciado dentro de uma requisição HTTP.
 
 Depois de `npm run build -w backend`, também é possível iniciar o worker compilado:
-`npm run worker:start -w backend`.
+`npm run worker:probe:start`.
 
 ## Configuração
 
