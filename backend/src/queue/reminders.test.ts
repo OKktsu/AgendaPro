@@ -118,6 +118,28 @@ describe('contrato e processamento de lembretes', () => {
   });
 });
 describe('ponte PostgreSQL para Redis', () => {
+  it('não consulta o banco se já estiver encerrando', async () => {
+    const { databases, resolve } = setup();
+    const organizations = vi.spyOn(databases, 'organizations');
+    await dispatchReminders(databases, { add: vi.fn() }, vi.fn(), () => true);
+    expect(organizations).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+  });
+  it('encerra o lote após confirmar o trabalho em andamento, sem publicar o próximo', async () => {
+    const { query, execute, databases } = setup();
+    query.mockResolvedValue([
+      { id: ids.reminderId, ...ids, dueAt: now },
+      { id: randomUUID(), ...ids, dueAt: now },
+    ]);
+    let closing = false;
+    const add = vi.fn().mockImplementation(async () => {
+      closing = true;
+      return {};
+    });
+    await dispatchReminders(databases, { add }, vi.fn(), () => closing);
+    expect(add).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledOnce();
+  });
   it('publica com ID estável e confirma apenas após queue.add', async () => {
     const { query, execute, databases } = setup();
     query.mockResolvedValue([{ id: ids.reminderId, ...ids, dueAt: new Date(0) }]);
